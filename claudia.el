@@ -4,7 +4,7 @@
 
 ;; Author: Martin Zacho <hi@martinzacho.net>
 ;; Version: 0.1
-;; Package-Requires: ((emacs "27.1") (uuidgen "0.3") (markdown-mode "2.3"))
+;; Package-Requires: ((uuidgen "0.3") (markdown-mode "2.3"))
 ;; Keywords: ai, tools, productivity, codegen
 ;; URL: https://github.com/mzacho/claudia
 
@@ -33,6 +33,7 @@
 ;;; Code:
 
 
+(require 'markdown-mode)
 (require 'tabulated-list)
 (require 'uuidgen)
 (require 'url)
@@ -114,12 +115,14 @@
   :group 'claudia)
 
 (defcustom claudia-explain-context-len 250
-  "Number of lines of context to include above and below region for `claudia-explain-region'."
+  "Number of lines of context to include above and below region for
+`claudia-explain-region'."
   :type 'string
   :group 'claudia)
 
 (defvar claudia--current-project-config nil
-  "Alist to store project-level configuration for Claudia.  Currently this includes name, id and instructions.")
+  "Alist to store project-level configuration for Claudia.  Currently this
+includes name, id and instructions.")
 
 (defvar claudia--current-chat nil
   "Current Claudia chat conversation.")
@@ -168,13 +171,15 @@
 - appropriate"))
 
 (defun claudia--set-last-instruction ()
-  "Set the last instruction (confirmation) to send to Claude before starting a new chat."
+  "Set the last instruction (confirmation) to send to Claude before starting a
+new chat."
   (claudia--set-project-config
    'last-instruction
    "Please confirm you understand and will follow these instructions."))
 
 (defun claudia--current-project-instructions ()
-  "Return the instructions given to Claudia when starting a new chat in the current project."
+  "Return the instructions given to Claudia when starting a new chat in the
+current project."
   (mapconcat
    'append
    `(,(claudia-get-project-config 'initial-instruction)
@@ -182,9 +187,8 @@
      ,(claudia-get-project-config 'last-instruction))
    "\n\n"))
 
-(defun claudia--explain-region-instruction ()
+(defun claudia--explain-region-instruction (region-content major-mode-name file-name &optional context)
   "The instructions given to Claude when running `claudia-explain-region'."
-  (region-content major-mode-name file-name &optional context)
   (format
    "Please explain this code:
 
@@ -266,8 +270,8 @@ the most important aspects of the diff.")
   any significant information." url))
 
 (defun claudia-api-request (method endpoint &optional data)
-  "Make an API request to Claude.
-METHOD is the HTTP method, ENDPOINT is the API endpoint, DATA is the request body."
+  "Make an API request to Claude. METHOD is the HTTP method, ENDPOINT is the API
+endpoint, DATA is the request body."
   (let* ((url-request-method method)
          (url-request-extra-headers
           `(("Content-Type" . "application/json")
@@ -288,7 +292,8 @@ METHOD is the HTTP method, ENDPOINT is the API endpoint, DATA is the request bod
         (error (message "Failed to parse JSON response"))))))
 
 (defun claudia-create-project (name description)
-  "Create a new project with NAME and DESCRIPTION and set it as the current working project."
+  "Create a new project with NAME and DESCRIPTION and set it as the current
+working project."
   (interactive "sEnter project name: \nsEnter project description: ")
   (let* ((response (claudia-api-request
                     "POST"
@@ -340,7 +345,7 @@ METHOD is the HTTP method, ENDPOINT is the API endpoint, DATA is the request bod
                            (max (point-min) (- (region-beginning) claudia-explain-context-len))
                            (min (point-max) (+ (region-end) claudia-explain-context-len)))))
              (query (claudia--explain-region-instruction
-                     region-content major-mode file-name context)))
+                     region-content major-mode-name file-name context)))
         (deactivate-mark)
         (claudia-create-chat
          (format "explain: %s..." (substring region-content 0 (min 30 (length region-content)))))
@@ -378,7 +383,8 @@ METHOD is the HTTP method, ENDPOINT is the API endpoint, DATA is the request bod
     (message "No current project set. Use claudia-create-project first.")))
 
 (defun claudia-create-chat (name)
-  "Create a new chat conversation with NAME in the current project and set it as the current chat."
+  "Create a new chat conversation with NAME in the current project and set it as
+the current chat."
   (interactive "sEnter chat name: \n")
   (unless claudia--current-project-config
     (claudia-create-project "no name" "no desc"))
@@ -653,7 +659,7 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
                                              "%Y-%m-%d %H:%M:%S"
                                              (date-to-time created-at))
                                           "nil"))
-                        (project-name-with-id (propertize name 'project-id project-id)))
+                        (project-name-with-id (propertize project-name 'project-id project-id)))
                    `(,id [,name ,project-name-with-id ,updated-at-fmt ,created-at-fmt])))
                response))))
     (tabulated-list-print t)
@@ -662,12 +668,10 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
 (defun claudia-chat-list-select-chat ()
   "Select the chat at point in the chat list."
   (interactive)
-  (let ((id (tabulated-list-get-id)))
-    (when id
-      (claudia--switch-to-chat id t))))
+  (claudia--switch-to-chat t))
 
 
-(defun claudia--switch-to-chat (id display-buffer)
+(defun claudia--switch-to-chat (display-buffer)
   "Switch to the chat with the given ID and display the *claudia-chat* buffer if
 DISPLAY-BUFFER is non-nil."
   (let* ((chat (tabulated-list-get-entry))
