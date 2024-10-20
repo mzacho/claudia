@@ -15,11 +15,11 @@
 ;;; Commentary:
 ;;
 ;; Claudia is an Emacs integration for the Claude AI
-;; assistant. Claudia is not affiliated with Anthropic or
-;; Claude.ai. By using Claudia you agree to use it at your own risk,
+;; assistant.  Claudia is not affiliated with Anthropic or
+;; Claude.ai.  By using Claudia you agree to use it at your own risk,
 ;; and acknowledge potential violation of Anthropic's Terms of
 ;; Service, for which you assume full responsibility for any
-;; consequences. Understand that Anthropic does not support this tool
+;; consequences.  Understand that Anthropic does not support this tool
 ;; and please review Anthropic's Terms of Service before using
 ;; Claudia:
 ;;
@@ -64,7 +64,7 @@
   :group 'external)
 
 (defcustom claudia-debug nil
-  "Enable debug printing"
+  "Enable debug printing."
   :type 'boolean
   :group 'claudia)
 
@@ -85,7 +85,7 @@
   :group 'claudia)
 
 (defcustom claudia-model "claude-3-5-sonnet-20240620"
-  "The model to use for new chats. Possible values are
+  "The model to use for new chats.  Possible values are:
 
 - claude-3-5-sonnet-20450620
 - claude-3-opus-20240229
@@ -104,30 +104,28 @@
   :group 'claudia)
 
 (defcustom claudia-download-url-program-args "-dump -nolist -width=1000"
-  "Path to args to pass to claudia-download-url-program"
+  "Path to args to pass to `claudia-download-url-program'."
   :type 'string
   :group 'claudia)
 
 (defcustom claudia-explain-include-context t
-  "Wether to include code context around around claudia-explain-region queries"
+  "Wether to include code context around around `claudia-explain-region' queries."
   :type 'boolean
   :group 'claudia)
 
 (defcustom claudia-explain-context-len 250
-  "Number of lines of context to include above and below region for
-  claudia-explain-region."
+  "Number of lines of context to include above and below region for `claudia-explain-region'."
   :type 'string
   :group 'claudia)
 
 (defvar claudia--current-project-config nil
-  "Alist to store project-level configuration for Claudia. Currently
-  this includes name, id and instructions")
+  "Alist to store project-level configuration for Claudia.  Currently this includes name, id and instructions.")
 
 (defvar claudia--current-chat nil
   "Current Claudia chat conversation.")
 
 (defvar claudia--query-display-response-buf t
-  "Display the reponse buffer after a calling claudia-query-async")
+  "Display the reponse buffer after a calling `claudia-query-async'.")
 
 (defun claudia-get-api-key ()
   "Retrieve the Claude API key."
@@ -146,31 +144,37 @@
   (alist-get key claudia--current-project-config))
 
 (defun claudia--set-initial-instruction ()
+  "Set the initial instruction for Claude AI interactions."
   (claudia--set-project-config
    'initial-instruction
-   "For this entire conversation, please skip any introductory paragraphs or context restatements in your responses. Be concise and focus on the technical details. Never repeat identical code from previous responses. Don't apologize for any confusion."))
+   "For this entire conversation, please skip any introductory
+   paragraphs or context restatements in your responses. Be concise
+   and focus on the technical details. Never repeat identical code
+   from previous responses. Don't apologize for any confusion."))
 
 (defun claudia--set-markdown-config ()
+  "Instruct Cladia to respond with valid markdown."
   (claudia--set-project-config 'markdown-mode t)
   (claudia--set-project-config
    'markdown-instruction
-   "For this entire conversation, please format all your responses in valid Markdown. This includes:
+   "For this entire conversation, please format all your responses in
+   valid Markdown. This includes:
 
-- Using proper heading levels (# for main headings, ## for subheadings, etc.)
-- Correctly formatting lists (both ordered and unordered)
-- Using backticks for inline code and triple backticks for code blocks
-- Properly formatting links, bold, and italic text
-- Separating paragraphs with blank lines
-- Using blockquotes where appropriate"))
+- Using proper heading levels (# for main headings, ## for
+- subheadings, etc.)  Correctly formatting lists (both ordered and
+- unordered) Using backticks for inline code and triple backticks for
+- code blocks Properly formatting links, bold, and italic text
+- Separating paragraphs with blank lines Using blockquotes where
+- appropriate"))
 
 (defun claudia--set-last-instruction ()
+  "Set the last instruction (confirmation) to send to Claude before starting a new chat."
   (claudia--set-project-config
    'last-instruction
    "Please confirm you understand and will follow these instructions."))
 
-;;; Instructions that live on the project are executed on the
-;;; beginning of every new project chat
 (defun claudia--current-project-instructions ()
+  "Return the instructions given to Claudia when starting a new chat in the current project."
   (mapconcat
    'append
    `(,(claudia-get-project-config 'initial-instruction)
@@ -178,8 +182,9 @@
      ,(claudia-get-project-config 'last-instruction))
    "\n\n"))
 
-(defun claudia--explain-region-instruction
-    (region-content major-mode-name file-name &optional context)
+(defun claudia--explain-region-instruction ()
+  "The instructions given to Claude when running `claudia-explain-region'."
+  (region-content major-mode-name file-name &optional context)
   (format
    "Please explain this code:
 
@@ -197,14 +202,17 @@ Code to explain:
 %s
 ```
 
-Please provide a detailed explanation of what this code does, any notable patterns or idioms used, and potential improvements or considerations."
+Please provide a detailed explanation of what this code does, any
+notable patterns or idioms used, and potential improvements or
+considerations."
    (or file-name "N/A")
    major-mode-name
    (or context "N/A")
    region-content))
 
 (defun claudia--magit-commit-msg-instruction ()
-  "Please suggest a concise and informative commit message based on the diff I just put in your knowledge context. The message should follow this format:
+  "Please suggest a concise and informative commit message based on the diff I
+just put in your knowledge context.  The message should follow this format:
 
 <type>[optional scope]: <description>
 
@@ -212,25 +220,35 @@ Please provide a detailed explanation of what this code does, any notable patter
 
 The commit type can include the following:
 
-feat – a new feature is introduced with the changes
-fix – a bug fix has occurred
-chore – changes that do not relate to a fix or feature and don't modify src or test files (for example updating dependencies)
-refactor – refactored code that neither fixes a bug nor adds a feature
-docs – updates to documentation such as a the README or other markdown files
-style – changes that do not affect the meaning of the code, likely related to code formatting such as white-space, missing semi-colons, and so on.
-test – including new or correcting previous tests
-perf – performance improvements
-ci – continuous integration related
-build – changes that affect the build system or external dependencies
-revert – reverts a previous commit
-The commit type subject line should be all lowercase with a character limit to encourage succinct descriptions.
+- feat – a new feature is introduced with the changes
+- fix – a bug fix has occurred
+- chore – changes that do not relate to a fix or feature
+and don't modify src or test files (for example updating dependencies)
+- refactor – refactored code that neither fixes a bug nor adds a feature
+- docs – updates to documentation such as a the README or other markdown
+files
+- style – changes that do not affect the meaning of the code,
+likely related to code formatting such as white-space, missing
+semi-colons, and so on.
+- test – including new or correcting previous
+tests
+- perf – performance improvements
+- ci – continuous integration
+related build – changes that affect the build system or external
+dependencies
+- revert – reverts a previous commit The commit type
+subject line should be all lowercase with a character limit to
+encourage succinct descriptions.
 
-The optional commit body should be used to provide further detail that cannot fit within the character limitations of the subject line description.
+The optional commit body should be used to provide further detail that
+cannot fit within the character limitations of the subject line
+description.
 
-Provide the RAW COMMIT MESSAGE WITHOUT ANY ADDITIONAL TEXT. Think really hard about the magit-diff in your knowledge context.")
+Provide the RAW COMMIT MESSAGE WITHOUT ANY ADDITIONAL TEXT.  Think
+really hard about the `magit-diff' in your knowledge context.")
 
 (defun claudia--gh-summarize-pr-instruction ()
-  "Return the prompt for summarizing a PR diff."
+  "The prompt for `claudia-gh-summarize-pr-from-url'."
   "Please provide a concise summary of the changes in this pull request. Include:
 1. The title of the PR
 1. The main purpose or goal of the changes
@@ -238,10 +256,14 @@ Provide the RAW COMMIT MESSAGE WITHOUT ANY ADDITIONAL TEXT. Think really hard ab
 3. Any notable additions, deletions, or modifications
 4. Potential impact or implications of these changes
 
-Please be brief but informative, focusing on the technical details and the most important aspects of the diff.")
+Please be brief but informative, focusing on the technical details and
+the most important aspects of the diff.")
 
 (defun claudia--web-summary-instruction (url)
-  (format "Please provide a concise, but rather deep, summary of the web page content from %s. Include the main topics, key points, and any significant information." url))
+  "The prompt for `claudia-summarize-page-from-url' for summarizing URL."
+  (format "Please provide a concise, but rather deep, summary of the
+  web page content from %s. Include the main topics, key points, and
+  any significant information." url))
 
 (defun claudia-api-request (method endpoint &optional data)
   "Make an API request to Claude.
@@ -308,11 +330,11 @@ METHOD is the HTTP method, ENDPOINT is the API endpoint, DATA is the request bod
   "Send the active region to Claude with context and ask for an explanation."
   (interactive)
   (if (use-region-p)
-      (let* ((region-content (buffer-substring-no-properties 
-                              (region-beginning) 
+      (let* ((region-content (buffer-substring-no-properties
+                              (region-beginning)
                               (region-end)))
              (major-mode-name (symbol-name major-mode))
-             (file-name (buffer-file-name))                          
+             (file-name (buffer-file-name))
              (context (if claudia-explain-include-context
                           (buffer-substring-no-properties
                            (max (point-min) (- (region-beginning) claudia-explain-context-len))
@@ -356,8 +378,7 @@ METHOD is the HTTP method, ENDPOINT is the API endpoint, DATA is the request bod
     (message "No current project set. Use claudia-create-project first.")))
 
 (defun claudia-create-chat (name)
-  "Create a new chat conversation in the current project and set it as
-the current chat."
+  "Create a new chat conversation with NAME in the current project and set it as the current chat."
   (interactive "sEnter chat name: \n")
   (unless claudia--current-project-config
     (claudia-create-project "no name" "no desc"))
@@ -385,8 +406,8 @@ the current chat."
       (message "Failed to create chat conversation"))))
 
 (defun claudia-query (prompt &optional arg)
-  "Send PROMPT to Claude in the current chat conversation. With prefix
-ARG, don't display the prompt in the *claudia-chat* buffer.
+  "Send PROMPT to Claude in the current chat conversation.  With prefix ARG,
+don't display the prompt in the *claudia-chat* buffer.
 
 When called interactively, prompts for the query string."
   (interactive "sclaudia query: \nP")
@@ -397,6 +418,7 @@ When called interactively, prompts for the query string."
     (claudia--query-async prompt claudia--query-display-response-buf t t)))
 
 (defun claudia--fmt-markdown-prompt (sender time &optional prompt)
+  "Format the line displayed in `claudia-chat' for SENDER's PROMPT at TIME."
   (let ((beginning (if (= (point-min) (point-max)) "" "\n"))
         (time-fmt (format-time-string "%Y-%m-%d %H:%M:%S" time)))
     (if prompt
@@ -406,27 +428,27 @@ When called interactively, prompts for the query string."
       (format "%s**%s**: (%s)\n" beginning sender time-fmt))))
 
 (defun claudia--query-async (prompt &optional display-response-buf show-response show-prompt callback)
-  "Send PROMPT to Claude in the current chat conversation, using an
-async web request. If DISPLAY-RESPONSE-BUF is non-nil display the
-*claudia-chat* buffer when the response arrives. If SHOW-RESPONSE is
-non-nil show the streaming response in the *claudia-chat* buffer, and
-include the prompt if SHOW-PROMPT is also non-nil.
+  "Send PROMPT to Claude in the current chat conversation using an async web
+request.  If DISPLAY-RESPONSE-BUF is non-nil display the *claudia-chat* buffer
+when the response arrives.  If SHOW-RESPONSE is non-nil show the streaming
+response in the *claudia-chat* buffer, and include the prompt if SHOW-PROMPT is
+also non-nil.
 
-If CALLBACK and SHOW-RESPONSE are non-nil then CALLBACK is called when
-the response is ready with a single string argument (that is, the
-response from Claude)."
+If CALLBACK and SHOW-RESPONSE are non-nil then CALLBACK is called when the
+response is ready with a single string argument (that is, the response from
+Claude)."
   (if claudia--current-chat
       (let* ((chat-id (alist-get 'id claudia--current-chat))
-             (url (concat claudia-api-url 
-                          (format "/organizations/%s/chat_conversations/%s/completion" 
+             (url (concat claudia-api-url
+                          (format "/organizations/%s/chat_conversations/%s/completion"
                                   claudia-organization-id chat-id)))
              (url-request-method "POST")
              (url-request-extra-headers
               `(("Content-Type" . "application/json")
                 ("Cookie" . ,(format "sessionKey=%s" (claudia-get-api-key)))
                 ("Accept" . "text/event-stream")))
-             (url-request-data 
-              (encode-coding-string 
+             (url-request-data
+              (encode-coding-string
                (json-encode
                 `(("prompt" . ,prompt)
                   ("timezone" . "UTC")
@@ -444,7 +466,7 @@ response from Claude)."
                            (insert (claudia--fmt-markdown-prompt
                                     "You" (current-time) prompt)))
                        (point)))))
-              
+
               (url-retrieve
                url
                (lambda (status
@@ -476,9 +498,9 @@ response from Claude)."
                          (insert "\n"))
                        (goto-char prompt-point)
                        (forward-line 2)
+                       (message nil)
                        (if display-response-buf
                            (recenter-top-bottom 0))
-                       (message nil)
                        (let ((response (buffer-substring-no-properties
                                         response-point (point-max))))
                          (when (functionp callback)
@@ -499,10 +521,10 @@ response from Claude)."
     (message "No current chat conversation. Use claudia-create-chat first.")))
 
 (defun claudia--parse-sse (parse-buffer response-buffer &optional rec)
-  "Parse SSE data in PARSE-BUFFER and update RESPONSE-BUFFER.  The
-optional argument REC is set when recursing, and used to distinguish
-the first call to the function, since we want to strip the first
-character from the response, which is apparently always a whitespace."
+  "Parse SSE data in PARSE-BUFFER and update RESPONSE-BUFFER.  The optional
+argument REC is set when recursing, and used to distinguish the first call to
+the function, since we want to strip the first character from the response,
+which is apparently always a whitespace."
   (let ((mark (point-min))
         (mark-response
          (with-current-buffer response-buffer
@@ -554,7 +576,7 @@ character from the response, which is apparently always a whitespace."
 (define-derived-mode claudia-chat-list-mode tabulated-list-mode "claudia:chats"
   "Major mode for listing Claude chat conversations."
   (let* ((window-width (- (window-width) 6)) ; Subtract 4 for some padding
-         (name-width (floor (* 0.35 window-width)))         
+         (name-width (floor (* 0.35 window-width)))
          (updated-width 20)
          (created-width 20)
          (project-width (- window-width name-width updated-width created-width)))
@@ -646,8 +668,8 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
 
 
 (defun claudia--switch-to-chat (id display-buffer)
-  "Switch to the chat with the given ID and display the *claudia-chat*
-buffer if DISPLAY-BUFFER is non-nil."
+  "Switch to the chat with the given ID and display the *claudia-chat* buffer if
+DISPLAY-BUFFER is non-nil."
   (let* ((chat (tabulated-list-get-entry))
          (chat-id (tabulated-list-get-id))
          (chat-name (elt chat 0))
@@ -705,7 +727,8 @@ buffer if DISPLAY-BUFFER is non-nil."
     (message "No previous prompts found.")))
 
 (defun claudia--get-chat-buffer (&optional display-buf)
-  "Get or create the buffer for the current chat and optionally display it."
+  "Get or create the buffer for the current chat and optionally display it if
+DISPLAY-BUF is non-nil."
   (with-current-buffer (get-buffer-create "*claudia-chat*")
     (claudia-chat-mode)
     (goto-char (point-max))
@@ -754,7 +777,7 @@ buffer if DISPLAY-BUFFER is non-nil."
   "Fetch the chat history for the given chat CHAT-ID."
   (claudia-api-request
    "GET"
-   (format "/organizations/%s/chat_conversations/%s" 
+   (format "/organizations/%s/chat_conversations/%s"
            claudia-organization-id chat-id)))
 
 (defun claudia--update-chat-buffer (chat)
@@ -767,7 +790,7 @@ buffer if DISPLAY-BUFFER is non-nil."
         (let ((sender (alist-get 'sender message))
               (text (alist-get 'text message))
               (created-at (alist-get 'created_at message)))
-          (insert (claudia--fmt-markdown-prompt 
+          (insert (claudia--fmt-markdown-prompt
                    (if (string= sender "human") "You" "Claude")
                    (date-to-time created-at)
                    text)))))))
@@ -804,11 +827,12 @@ buffer if DISPLAY-BUFFER is non-nil."
     (error "Invalid GitHub pull request URL format")))
 
 (defun claudia--gh-summarize-pr (owner repo pr)
-  "Summarize the diff of a GitHub pull request using Claude AI.
+  "Summarize the diff of a GitHub pull request found at OWNER/REPO/pull/PR using
+Claude AI.
 
-Fetches the diff for pull request with ID using the GitHub CLI, sends it to Claude,
-and returns a summary of the changes. Displays an error with the command output
-if the GitHub CLI command fails."
+Fetches the diff for pull request with ID using the GitHub CLI, sends it to
+Claude, and returns a summary of the changes.  Displays an error with the
+command output if the GitHub CLI command fails."
   (let* ((diff-command (format "%s pr diff %s -R %s/%s" claudia-gh-program pr owner repo))
          (view-command (format "%s pr view %s -R %s/%s" claudia-gh-program pr owner repo))
          (diff-buffer (generate-new-buffer "*gh-pr-diff*"))
@@ -824,30 +848,31 @@ if the GitHub CLI command fails."
             (claudia-send-visiting-buffer))
           (with-current-buffer view-buffer
             (claudia-send-visiting-buffer))
-          (claudia--query-async 
+          (claudia--query-async
            (claudia--gh-summarize-pr-instruction) t t))
       (let (;; most likely each command succeed iff the other succeeds,
             ;; so just take the error from the diff command
             (error-output (with-current-buffer diff-buffer
-                            (buffer-string))))        
+                            (buffer-string))))
         (message "Error: gh failed: %s" error-output)
         (kill-buffer summary-buffer)))
     (kill-buffer diff-buffer)))
 
 
 (defun claudia-suggest-commit-msg ()
-  "Generate a commit message suggestion using Claude AI and the current magit-diff.
+  "Generate a commit message suggestion using Claude AI and the currently active
+`magit-diff' buffer.
 
 This function performs the following steps:
 1. Creates a temporary Claude project and chat for commit message generation.
-2. Identifies the active magit-diff buffer.
+2. Identifies the active `magit-diff' buffer.
 3. Sends the diff content to Claude AI.
 4. Retrieves the AI-generated commit message suggestion.
 5. Copies the suggestion to the kill ring for easy pasting.
 
 The function will raise an error if:
-- No magit-diff buffers are found.
-- Multiple magit-diff buffers are open simultaneously.
+- No `magit-diff' buffers are found.
+- Multiple `magit-diff' buffers are open simultaneously.
 
 Usage:
 Call this function interactively when viewing a git diff in magit.
@@ -865,7 +890,7 @@ ready to be pasted into the commit message buffer."
      ((null diff-buffers)
       (error "No magit-diff buffers found"))
      ((> (length diff-buffers) 1)
-      (error "Multiple magit-diff buffers open. Please close all but one"))
+      (error "Multiple magit-diff buffers open.  Please close all but one"))
      (t
       (with-current-buffer (car diff-buffers)
         (claudia-send-visiting-buffer)
@@ -878,3 +903,7 @@ ready to be pasted into the commit message buffer."
 
 
 (provide 'claudia)
+
+(provide 'claudia)
+
+;;; claudia.el ends here
