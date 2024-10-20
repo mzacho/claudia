@@ -26,22 +26,25 @@ Currently, Claudia is not available on MELPA. To install manually:
    (add-to-list 'load-path "/path/to/claudia")
    (require 'claudia)
    ```
+   
+   or if using `use-package`:
+   
+   ```elisp
+   (use-package claudia
+      :load-path "/path/to/claudia")
+   ```
 
 ## Configuration
 
 Add the following to your Emacs configuration:
 
 ```elisp
-(use-package claudia
-  :load-path "/path/to/claudia"
-  :config
-  (setq claudia-api-key "your-api-key-here")
-  (setq claudia-organization-id "your-organization-id-here")
-  (setq claudia-model "claude-3-5-sonnet-20240620")
-  (global-set-key (kbd "C-x c") claudia-global-map))
+(setq claudia-api-key "your-api-key-here")
+(setq claudia-organization-id "your-organization-id-here")
+(global-set-key (kbd "C-x c") claudia-global-map)
 ```
 
-Replace `"your-api-key-here"` and `"your-organization-id-here"` with your actual Claude API key and organization ID.
+Replace `"your-api-key-here"` and `"your-organization-id-here"` with your actual Claude API key and organization ID. The API key can be found using Chrome dev-tools under Cookies / sessionKey (it starts with `sk-ant-`) and the org ID can be read from the url in the Claude UI.
 
 ## Usage
 
