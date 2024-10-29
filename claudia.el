@@ -178,10 +178,10 @@ Currently this includes name, id and instructions.")
 (defun claudia--current-project-instructions ()
   "Instructions to Claudia when starting a new chat in the current project."
   (mapconcat
-   'append
-   `(,(claudia-get-project-config 'initial-instruction)
-     ,(claudia-get-project-config 'markdown-instruction)
-     ,(claudia-get-project-config 'last-instruction))
+   #'append
+   (list (claudia-get-project-config 'initial-instruction)
+         (claudia-get-project-config 'markdown-instruction)
+         (claudia-get-project-config 'last-instruction))
    "\n\n"))
 
 (defun claudia--explain-region-instruction (region major-mode-name file-name &optional context)
@@ -426,7 +426,7 @@ When called interactively, prompts for the query string."
 (defun claudia--fmt-markdown-prompt (sender time &optional prompt)
   "Format the line displayed in `claudia-chat' for SENDER's PROMPT at TIME."
   (let ((beginning (if (= (point-min) (point-max)) "" "\n"))
-        (time-fmt (format-time-string "%Y-%m-%d %H:%M:%S" time)))
+        (time-fmt (format-time-string "%F %T" time)))
     (if prompt
         ;; for some reason Claude responses start with an annoying whitespace
         (let ((prompt-fmt (if (string= sender "Claude") (substring prompt 1) prompt)))
@@ -638,7 +638,7 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
         (message "Failed to refresh chat list: %s" response)
       (progn
         (if claudia-debug
-            (message (format "%s" response)))
+            (message response))
         (setq tabulated-list-entries
               (mapcar
                (lambda (chat)
@@ -651,12 +651,12 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
                         (project-id (if project (alist-get 'uuid project) "[no project]"))
                         (updated-at-fmt (if updated-at
                                             (format-time-string
-                                             "%Y-%m-%d %H:%M:%S"
+                                             "%F %T"
                                              (date-to-time updated-at))
                                           "nil"))
                         (created-at-fmt (if created-at
                                             (format-time-string
-                                             "%Y-%m-%d %H:%M:%S"
+                                             "%F %T"
                                              (date-to-time created-at))
                                           "nil"))
                         (project-name-with-id (propertize project-name 'project-id project-id)))
