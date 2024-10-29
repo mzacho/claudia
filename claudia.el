@@ -115,12 +115,13 @@
   :group 'claudia)
 
 (defcustom claudia-explain-context-len 250
-  "Number of lines of context to include above and below region for `claudia-explain-region'."
+  "Lines of context to include around region for `claudia-explain-region'."
   :type 'string
   :group 'claudia)
 
 (defvar claudia--current-project-config nil
-  "Alist to store project-level configuration for Claudia.  Currently this includes name, id and instructions.")
+  "Alist to store project-level configuration for Claudia.
+Currently this includes name, id and instructions.")
 
 (defvar claudia--current-chat nil
   "Current Claudia chat conversation.")
@@ -169,13 +170,13 @@
 - appropriate"))
 
 (defun claudia--set-last-instruction ()
-  "Set the last instruction (confirmation) to send to Claude before starting a new chat."
+  "Set last instruction (confirmation) to Claude before starting a new chat."
   (claudia--set-project-config
    'last-instruction
    "Please confirm you understand and will follow these instructions."))
 
 (defun claudia--current-project-instructions ()
-  "Return the instructions given to Claudia when starting a new chat in the current project."
+  "Instructions to Claudia when starting a new chat in the current project."
   (mapconcat
    'append
    `(,(claudia-get-project-config 'initial-instruction)
@@ -184,7 +185,9 @@
    "\n\n"))
 
 (defun claudia--explain-region-instruction (region major-mode-name file-name &optional context)
-  "The instructions given to Claude when running `claudia-explain-region' for explaning the the code REGION in FILE-NAME using MAJOR-MODE-NAME."
+  "The instructions given to Claude when running `claudia-explain-region'.
+The instruction asks for an exlpanaiotn of code REGION in FILE-NAME using
+MAJOR-MODE-NAME, optionnaly including code CONTEXT around the code region."
   (format
    "Please explain this code:
 
@@ -267,7 +270,7 @@ the most important aspects of the diff.")
   any significant information." url))
 
 (defun claudia-api-request (method endpoint &optional data)
-  "Make an API request to Claude using HTTP METHOD, API ENDPOINT and request body DATA."
+  "Make a request to Claude using HTTP METHOD, API ENDPOINT and request body DATA."
   (let* ((url-request-method method)
          (url-request-extra-headers
           `(("Content-Type" . "application/json")
@@ -288,7 +291,10 @@ the most important aspects of the diff.")
         (error (message "Failed to parse JSON response"))))))
 
 (defun claudia-create-project (name description)
-  "Create a new project with NAME and DESCRIPTION and set it as the current working project."
+  "Create a new project with NAME and DESCRIPTION.
+The projec is set as the current working project, so any new chat started with
+`claudia-create-chat' or knowledge context added with
+`claudia-send-visiting-buffer' will be within this project."
   (interactive "sEnter project name: \nsEnter project description: ")
   (let* ((response (claudia-api-request
                     "POST"
@@ -378,7 +384,8 @@ the most important aspects of the diff.")
     (message "No current project set. Use claudia-create-project first.")))
 
 (defun claudia-create-chat (name)
-  "Create a new chat conversation with NAME in the current project and set it as the current chat."
+  "Create a new chat conversation with NAME in the current project.
+The chate is set as the current chat."
   (interactive "sEnter chat name: \n")
   (unless claudia--current-project-config
     (claudia-create-project "no name" "no desc"))
@@ -665,7 +672,8 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
 
 
 (defun claudia--switch-to-chat (display-buffer)
-  "Switch to the chat with the given ID and display the *claudia-chat* buffer if DISPLAY-BUFFER is non-nil."
+  "Switch to the chat at the current tabulated list entry.
+If DISPLAY-BUFFER is non-nil display the *claudia-chat* buffer."
   (let* ((chat (tabulated-list-get-entry))
          (chat-id (tabulated-list-get-id))
          (chat-name (elt chat 0))
@@ -723,7 +731,8 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
     (message "No previous prompts found.")))
 
 (defun claudia--get-chat-buffer (&optional display-buf)
-  "Get or create the buffer for the current chat and optionally display it if DISPLAY-BUF is non-nil."
+  "Get or create the *claudia-chat* buffer for the current chat.
+Optionally display it if DISPLAY-BUF is non-nil."
   (with-current-buffer (get-buffer-create "*claudia-chat*")
     (claudia-chat-mode)
     (goto-char (point-max))
