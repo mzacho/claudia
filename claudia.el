@@ -1,10 +1,10 @@
-;;; claudia.el --- Claude AI Emacs integration -*- lexical-binding: t; -*-
+;;; claudia.el --- Claude AI integration -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2024 Martin Zacho
 
 ;; Author: Martin Zacho <hi@martinzacho.net>
 ;; Version: 0.1
-;; Package-Requires: ((uuidgen "0.3") (markdown-mode "2.3"))
+;; Package-Requires: ((emacs "24.1") (uuidgen "0.3") (markdown-mode "2.3"))
 ;; Keywords: ai, tools, productivity, codegen
 ;; URL: https://github.com/mzacho/claudia
 
@@ -115,14 +115,12 @@
   :group 'claudia)
 
 (defcustom claudia-explain-context-len 250
-  "Number of lines of context to include above and below region for
-`claudia-explain-region'."
+  "Number of lines of context to include above and below region for `claudia-explain-region'."
   :type 'string
   :group 'claudia)
 
 (defvar claudia--current-project-config nil
-  "Alist to store project-level configuration for Claudia.  Currently this
-includes name, id and instructions.")
+  "Alist to store project-level configuration for Claudia.  Currently this includes name, id and instructions.")
 
 (defvar claudia--current-chat nil
   "Current Claudia chat conversation.")
@@ -171,15 +169,13 @@ includes name, id and instructions.")
 - appropriate"))
 
 (defun claudia--set-last-instruction ()
-  "Set the last instruction (confirmation) to send to Claude before starting a
-new chat."
+  "Set the last instruction (confirmation) to send to Claude before starting a new chat."
   (claudia--set-project-config
    'last-instruction
    "Please confirm you understand and will follow these instructions."))
 
 (defun claudia--current-project-instructions ()
-  "Return the instructions given to Claudia when starting a new chat in the
-current project."
+  "Return the instructions given to Claudia when starting a new chat in the current project."
   (mapconcat
    'append
    `(,(claudia-get-project-config 'initial-instruction)
@@ -187,8 +183,8 @@ current project."
      ,(claudia-get-project-config 'last-instruction))
    "\n\n"))
 
-(defun claudia--explain-region-instruction (region-content major-mode-name file-name &optional context)
-  "The instructions given to Claude when running `claudia-explain-region'."
+(defun claudia--explain-region-instruction (region major-mode-name file-name &optional context)
+  "The instructions given to Claude when running `claudia-explain-region' for explaning the the code REGION in FILE-NAME using MAJOR-MODE-NAME."
   (format
    "Please explain this code:
 
@@ -212,11 +208,12 @@ considerations."
    (or file-name "N/A")
    major-mode-name
    (or context "N/A")
-   region-content))
+   region))
 
 (defun claudia--magit-commit-msg-instruction ()
+  "The instructions given to Claude when running `claudia-suggest-commit-msg'."
   "Please suggest a concise and informative commit message based on the diff I
-just put in your knowledge context.  The message should follow this format:
+just put in your knowledge context. The message should follow this format:
 
 <type>[optional scope]: <description>
 
@@ -270,8 +267,7 @@ the most important aspects of the diff.")
   any significant information." url))
 
 (defun claudia-api-request (method endpoint &optional data)
-  "Make an API request to Claude. METHOD is the HTTP method, ENDPOINT is the API
-endpoint, DATA is the request body."
+  "Make an API request to Claude using HTTP METHOD, API ENDPOINT and request body DATA."
   (let* ((url-request-method method)
          (url-request-extra-headers
           `(("Content-Type" . "application/json")
@@ -292,8 +288,7 @@ endpoint, DATA is the request body."
         (error (message "Failed to parse JSON response"))))))
 
 (defun claudia-create-project (name description)
-  "Create a new project with NAME and DESCRIPTION and set it as the current
-working project."
+  "Create a new project with NAME and DESCRIPTION and set it as the current working project."
   (interactive "sEnter project name: \nsEnter project description: ")
   (let* ((response (claudia-api-request
                     "POST"
@@ -383,8 +378,7 @@ working project."
     (message "No current project set. Use claudia-create-project first.")))
 
 (defun claudia-create-chat (name)
-  "Create a new chat conversation with NAME in the current project and set it as
-the current chat."
+  "Create a new chat conversation with NAME in the current project and set it as the current chat."
   (interactive "sEnter chat name: \n")
   (unless claudia--current-project-config
     (claudia-create-project "no name" "no desc"))
@@ -412,9 +406,8 @@ the current chat."
       (message "Failed to create chat conversation"))))
 
 (defun claudia-query (prompt &optional arg)
-  "Send PROMPT to Claude in the current chat conversation.  With prefix ARG,
-don't display the prompt in the *claudia-chat* buffer.
-
+  "Send PROMPT to Claude in the current chat conversation.
+With prefix ARG, don't display the prompt in the *claudia-chat* buffer.
 When called interactively, prompts for the query string."
   (interactive "sclaudia query: \nP")
   (unless claudia--current-chat
@@ -434,11 +427,11 @@ When called interactively, prompts for the query string."
       (format "%s**%s**: (%s)\n" beginning sender time-fmt))))
 
 (defun claudia--query-async (prompt &optional display-response-buf show-response show-prompt callback)
-  "Send PROMPT to Claude in the current chat conversation using an async web
-request.  If DISPLAY-RESPONSE-BUF is non-nil display the *claudia-chat* buffer
-when the response arrives.  If SHOW-RESPONSE is non-nil show the streaming
-response in the *claudia-chat* buffer, and include the prompt if SHOW-PROMPT is
-also non-nil.
+  "Send PROMPT to Claude in current chat conversation in an async web request.
+If DISPLAY-RESPONSE-BUF is non-nil display the *claudia-chat* buffer when the
+response arrives.  If SHOW-RESPONSE is non-nil show the streaming response in
+the *claudia-chat* buffer, and include the prompt if SHOW-PROMPT is also
+non-nil.
 
 If CALLBACK and SHOW-RESPONSE are non-nil then CALLBACK is called when the
 response is ready with a single string argument (that is, the response from
@@ -527,10 +520,10 @@ Claude)."
     (message "No current chat conversation. Use claudia-create-chat first.")))
 
 (defun claudia--parse-sse (parse-buffer response-buffer &optional rec)
-  "Parse SSE data in PARSE-BUFFER and update RESPONSE-BUFFER.  The optional
-argument REC is set when recursing, and used to distinguish the first call to
-the function, since we want to strip the first character from the response,
-which is apparently always a whitespace."
+  "Parse SSE data in PARSE-BUFFER and update RESPONSE-BUFFER.
+The optional argument REC is set when recursing, and used to distinguish the
+first call to the function, since we want to strip the first character from the
+response, which is apparently always a whitespace."
   (let ((mark (point-min))
         (mark-response
          (with-current-buffer response-buffer
@@ -672,8 +665,7 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
 
 
 (defun claudia--switch-to-chat (display-buffer)
-  "Switch to the chat with the given ID and display the *claudia-chat* buffer if
-DISPLAY-BUFFER is non-nil."
+  "Switch to the chat with the given ID and display the *claudia-chat* buffer if DISPLAY-BUFFER is non-nil."
   (let* ((chat (tabulated-list-get-entry))
          (chat-id (tabulated-list-get-id))
          (chat-name (elt chat 0))
@@ -731,8 +723,7 @@ DISPLAY-BUFFER is non-nil."
     (message "No previous prompts found.")))
 
 (defun claudia--get-chat-buffer (&optional display-buf)
-  "Get or create the buffer for the current chat and optionally display it if
-DISPLAY-BUF is non-nil."
+  "Get or create the buffer for the current chat and optionally display it if DISPLAY-BUF is non-nil."
   (with-current-buffer (get-buffer-create "*claudia-chat*")
     (claudia-chat-mode)
     (goto-char (point-max))
@@ -831,9 +822,7 @@ DISPLAY-BUF is non-nil."
     (error "Invalid GitHub pull request URL format")))
 
 (defun claudia--gh-summarize-pr (owner repo pr)
-  "Summarize the diff of a GitHub pull request found at OWNER/REPO/pull/PR using
-Claude AI.
-
+  "Summarize the Gitub pull-request at www.github.com/OWNER/REPO/pull/PR.
 Fetches the diff for pull request with ID using the GitHub CLI, sends it to
 Claude, and returns a summary of the changes.  Displays an error with the
 command output if the GitHub CLI command fails."
@@ -864,24 +853,21 @@ command output if the GitHub CLI command fails."
 
 
 (defun claudia-suggest-commit-msg ()
-  "Generate a commit message suggestion using Claude AI and the currently active
-`magit-diff' buffer.
+  "Generate commit message for the currently active `magit-diff' buffer.
+Call this function interactively when viewing a git diff in magit.
+The suggested commit message will be available in the kill ring,
+ready to be pasted into the commit message buffer.
+
+The function will raise an error if:
+- No `magit-diff' buffers are found.
+- Multiple `magit-diff' buffers are open simultaneously.
 
 This function performs the following steps:
 1. Creates a temporary Claude project and chat for commit message generation.
 2. Identifies the active `magit-diff' buffer.
 3. Sends the diff content to Claude AI.
 4. Retrieves the AI-generated commit message suggestion.
-5. Copies the suggestion to the kill ring for easy pasting.
-
-The function will raise an error if:
-- No `magit-diff' buffers are found.
-- Multiple `magit-diff' buffers are open simultaneously.
-
-Usage:
-Call this function interactively when viewing a git diff in magit.
-The suggested commit message will be available in the kill ring,
-ready to be pasted into the commit message buffer."
+5. Copies the suggestion to the kill ring."
   (interactive)
   (claudia-create-project "[commit-msg]" "")
   (claudia-create-chat "[commit-msg]")
