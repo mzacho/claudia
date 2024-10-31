@@ -88,6 +88,12 @@ In the chat buffer (`claudia-chat-mode`):
 - `q` (`quit-window`): Quit the chat window
 
 
+## Eglot integration
+
+claudia integrates with eglot to enhance prompts with static code analysis using LSP. The following functions are available:
+
+- `claudia-eglot-explain-symbol-at-point`: Lookup definition and references of the current symbol (function/ class/ variable etc.) and ask Claude to explain the purpose of the symbol as used in your code-base. The prompt can be customized with `claudia-eglot-explain-prompt` and `claudia-eglot-explain-symbol-xref-context`.
+
 ## Customization
 
 Claudia provides several customizable variables:
