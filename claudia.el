@@ -33,11 +33,14 @@
 ;;; Code:
 
 
-(require 'markdown-mode)
-(require 'tabulated-list)
-(require 'uuidgen)
-(require 'url)
+(require 'eglot)
 (require 'json)
+(require 'markdown-mode)
+(require 'project)
+(require 'tabulated-list)
+(require 'url)
+(require 'uuidgen)
+(require 'xref)
 
 (defvar claudia-gh-map
   (let ((map (make-sparse-keymap)))
@@ -981,12 +984,10 @@ Reuses cached references from `eglot--lsp-xref-refs' when available."
 
 (defun claudia--eglot-format-xref-choice (xref root)
   "Format XREF for completion choice relative to project ROOT."
-  (let ((loc (xref-item-location xref)))
-    (cons
-     (format "%s (%s)"
-             (xref-item-summary xref)
-             (xref-location-group loc))
-     xref)))
+  (let* ((loc (xref-item-location xref))
+         (group (xref-location-group loc))
+         (file-name (file-relative-name group root)))
+    (cons (format "%s (%s)" (xref-item-summary xref) file-name)  xref)))
 
 (defun claudia--eglot-choose-definition (xrefs root)
   "Let user choose from multiple XREFS definitions in project at ROOT."
