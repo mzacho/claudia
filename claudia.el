@@ -699,6 +699,21 @@ If DISPLAY-BUFFER is non-nil display the *claudia-chat* buffer."
     (if display-buffer (claudia--get-chat-buffer t))))
 
 
+(defvar claudia--chat-prompt-regex "^\\*\\*\\(You\\)\\|\\(Claude\\)\\*\\*: ")
+(defvar claudia--chat-prompt-regex-you "^\\(?1:\\*\\*You\\*\\*: (.*)\n\\(?2:.*\\)\\)")
+
+(defun claudia-imenu-create-chat-index ()
+  "Create and return a flat imenu index alist for the current buffer.
+See `imenu-create-index-function' and `imenu--index-alist' for details."
+  (let (index)
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward claudia--chat-prompt-regex-you (point-max) t)
+        (let ((pos (match-beginning 1))
+              (heading (match-string-no-properties 2)))
+          (setq index (append index (list (cons heading pos))))))
+      index)))
+
 (defvar claudia-chat-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") 'claudia-query)
@@ -715,9 +730,10 @@ If DISPLAY-BUFFER is non-nil display the *claudia-chat* buffer."
 
 (define-derived-mode claudia-chat-mode markdown-mode "claudia:chat"
   "Major mode used for displaying Claude chat sessions."
-  (read-only-mode))
+  (read-only-mode)
+  (setq imenu-create-index-function
+        #'claudia-imenu-create-chat-index))
 
-(defvar claudia--chat-prompt-regex "^\\*\\*\\(You\\)\\|\\(Claude\\)\\*\\*: ")
 
 (defun claudia--chat-next-prompt ()
   "Move to the next prompt in the Claude chat buffer."
@@ -730,7 +746,7 @@ If DISPLAY-BUFFER is non-nil display the *claudia-chat* buffer."
 (defun claudia--chat-previous-prompt ()
   "Move to the previous prompt in the Claude chat buffer."
   (interactive)
-  (if (search-backward-regexp claudia--chat-prompt-regex nil t)
+  (if (search-backward-regexp claudia--chat-prompt-regex-you nil t)
       (beginning-of-line)
     (message "No previous prompts found.")))
 
