@@ -4,7 +4,7 @@
 
 ;; Author: Martin Zacho <hi@martinzacho.net>
 ;; Version: 0.1
-;; Package-Requires: ((emacs "25.1") (uuidgen "0.3") (markdown-mode "2.3"))
+;; Package-Requires: ((emacs "29.1") (uuidgen "0.3") (markdown-mode "2.3"))
 ;; Keywords: ai, tools, productivity, codegen
 ;; URL: https://github.com/mzacho/claudia
 
