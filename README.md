@@ -4,6 +4,8 @@ Claudia is an Emacs integration for the Claude AI assistant, providing an interf
 
 > *Note*: claudia is currently in pre-alpha, so expect breaking changes and rough edges.
 
+> *DISCLAIMER*: Claudia is not affiliated with Anthropic. By using Claudia you agree to use it at your own risk, and acknowledge potential violation of Anthropic's Terms of Service, for which you assume full responsibility for any consequences. Understand that Anthropic does not support this tool and please review [Anthropic's Terms of Service](https://www.anthropic.com/legal/consumer-terms) before using Claudia.
+
 ## Features
 
 - Create and manage AI projects and conversations within Emacs
