@@ -44,6 +44,7 @@
     map)
   "Keymap for Claudia GitHub-related commands.")
 
+;;;###autoload
 (defvar claudia-global-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "p") 'claudia-create-project)
@@ -288,6 +289,7 @@ the most important aspects of the diff.")
       (condition-case nil (json-read)
         (error (message "Failed to parse JSON response"))))))
 
+;;;###autoload
 (defun claudia-create-project (name description)
   "Create a new project with NAME and DESCRIPTION.
 The projec is set as the current working project, so any new chat started with
@@ -311,6 +313,7 @@ The projec is set as the current working project, so any new chat started with
           (message "Created and set current project to '%s' (ID: %s)" name project-id))
       (message "Failed to create project"))))
 
+;;;###autoload
 (defun claudia-send-visiting-buffer ()
   "Add the content of the visiting buffer to the current project."
   (interactive)
@@ -329,7 +332,7 @@ The projec is set as the current working project, so any new chat started with
           (message "Failed to add buffer content to project")))
     (message "No current project config set. Use claudia-create-project first.")))
 
-
+;;;###autoload
 (defun claudia-explain-region ()
   "Send the active region to Claude with context and ask for an explanation."
   (interactive)
@@ -351,6 +354,7 @@ The projec is set as the current working project, so any new chat started with
         (claudia--query-async query t t))
     (message "No active region. Please select some code to explain.")))
 
+;;;###autoload
 (defun claudia-clear-context ()
   "Delete all project knowledge files from the current project."
   (interactive)
@@ -381,6 +385,7 @@ The projec is set as the current working project, so any new chat started with
           (message "No files found in the current project.")))
     (message "No current project set. Use claudia-create-project first.")))
 
+;;;###autoload
 (defun claudia-create-chat (name)
   "Create a new chat conversation with NAME in the current project.
 The chate is set as the current chat."
@@ -410,6 +415,7 @@ The chate is set as the current chat."
                    name (claudia-get-project-config 'name) id))
       (message "Failed to create chat conversation"))))
 
+;;;###autoload
 (defun claudia-query (prompt &optional arg)
   "Send PROMPT to Claude in the current chat conversation.
 With prefix ARG, don't display the prompt in the *claudia-chat* buffer.
@@ -474,11 +480,11 @@ Claude)."
               (url-retrieve
                url
                (lambda (status
-                   prompt-point
-                   parse-buffer
-                   response-buffer
-                   display-response-buf
-                   callback)
+                        prompt-point
+                        parse-buffer
+                        response-buffer
+                        display-response-buf
+                        callback)
                  ;; (if claudia-debug
                  ;;     (message "API response: %s" (buffer-string)))
                  (if (plist-get status :error)
@@ -618,6 +624,7 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
   (tabulated-list-init-header)
   (message "Sorting by %s" claudia-chat-list-sorting-mode))
 
+;;;###autoload
 (defun claudia-list-chats ()
   "Display a list of Claude chat conversations."
   (interactive)
@@ -815,6 +822,7 @@ Optionally display it if DISPLAY-BUF is non-nil."
                    text)))))))
 
 
+;;;###autoload
 (defun claudia-summarize-page-from-url (url)
   "Summarize the contents of the web page at URL using Claude AI."
   (interactive "sEnter URL to summarize: ")
@@ -835,6 +843,8 @@ Optionally display it if DISPLAY-BUF is non-nil."
       (message "could not download url"))
     (kill-buffer summary-buffer)))
 
+
+;;;###autoload
 (defun claudia-gh-summarize-pr-from-url (url)
   "Summarize a GitHub pull request from its URL."
   (interactive "sEnter url: ")
@@ -876,6 +886,7 @@ command output if the GitHub CLI command fails."
     (kill-buffer diff-buffer)))
 
 
+;;;###autoload
 (defun claudia-suggest-commit-msg ()
   "Generate commit message for the currently active `magit-diff' buffer.
 Call this function interactively when viewing a git diff in magit.
@@ -1105,6 +1116,7 @@ is non-nil.  Otherwise the code region is a use-site/ referral."
                 :summary (xref-item-summary xref)))))))
 
 
+;;;###autoload
 (defun claudia-eglot-explain-symbol-at-point ()
   "Explain the symbol at point using Eglot and Claude."
   (interactive)
