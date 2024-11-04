@@ -720,7 +720,7 @@ See `imenu-create-index-function' and `imenu--index-alist' for details."
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") 'claudia-query)
     (define-key map (kbd "q") 'claudia-query)
-    (define-key map (kbd "e") 'claudia-explain)
+    (define-key map (kbd "e") 'claudia-explain-region)
     (define-key map (kbd "c") 'claudia-create-chat)
     (define-key map (kbd "k") 'claudia-clear-context)
     (define-key map (kbd "n") 'claudia--chat-next-prompt)
