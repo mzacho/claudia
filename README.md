@@ -70,9 +70,9 @@ All commands are accessible through the `claudia-global-map`, bound to `C-x c` b
 - `C-x c q` (`claudia-query`): Send a query to Claude
 - `C-x c l` (`claudia-list-chats`): Display a list of your chat conversations
 - `C-x c e` (`claudia-explain-region`): Ask Claude to explain the selected code region
-- `C-x c w` (`claudia-summarize-page-from-url`): Summarize a web page
+- `C-x c w` (`claudia-summarize-page-from-url`): Summarize a web page (requires `lynx` is installed)
 - `C-x c g m` (`claudia-suggest-commit-msg`): Generate a commit message based on the current git diff
-- `C-x c g p` (`claudia-gh-summarize-pr-from-url)`: Summarize key changes in a pull request
+- `C-x c g p` (`claudia-gh-summarize-pr-from-url)`: Summarize key changes in a pull request (requires `gh` is installed)
 - `C-x c k` (`claudia-clear-context`): Clear context (delete all project knowledge files)
 - `C-x c s` (`claudia-send-visiting-buffer`): Send the content of the current buffer to Claude
 
