@@ -15,7 +15,20 @@ Claudia is an Emacs integration for the Claude AI assistant, providing an interf
 
 ### Manual
 
-Currently, Claudia is not available on MELPA. To install manually:
+#### Install from MELPA
+
+To install claudia from MELPA with `use-package`:
+
+```elisp
+(use-package claudia
+    :ensure t
+    :bind ("C-x c" . claudia-global-map)
+    :custom
+    (claudia-api-key "your-api-key-here")
+    (claudia-organization-id "your-organization-id-here"))
+```
+
+#### Install manually (to hack or contribute to claudia)
 
 1. Clone this repository:
    ```
