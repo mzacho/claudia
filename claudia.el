@@ -44,7 +44,6 @@
     map)
   "Keymap for Claudia GitHub-related commands.")
 
-;;;###autoload
 (defvar claudia-global-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "p") 'claudia-create-project)
