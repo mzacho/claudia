@@ -1,3 +1,6 @@
+[![GPL v3](https://img.shields.io/badge/license-GPL_v3-green.svg)](http://www.gnu.org/licenses/gpl-3.0.txt)
+[![MELPA](https://melpa.org/packages/claudia-badge.svg)](https://melpa.org/#/github-review)
+
 # Claudia
 
 Claudia is an Emacs integration for the Claude AI assistant, providing an interface between Emacs and Anthropic's language models. Claudia aims to provide features that integrate well with built-in Emacs functions and commonly used 3rd party libraries, such as
