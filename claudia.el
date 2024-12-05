@@ -1,5 +1,3 @@
-;; -*- lexical-binding: t -*-
-
 ;;; claudia.el --- Claude AI integration -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2024 Martin Zacho
@@ -27,14 +25,15 @@
 ;;
 ;; https://www.anthropic.com/legal/consumer-terms
 
-
-(require 'tabulated-list)
-(require 'request)
 (require 'json)
+(require 'request)
+(require 'tabulated-list)
 (require 'url)
 (require 'uuidgen)
 
 ;; instructions
+
+;;; Code:
 
 (defcustom claudia-instruction-initial
   "For this entire conversation, please skip any introductory
@@ -187,6 +186,7 @@ The template should contain four %s placeholders for:
   :group 'claudia)
 
 (defun claudia--claude-ai-request-assert-status (expected type endpoint)
+  "Assert that latest request of TYPE to ENDPOINT had EXPECTED http status."
   (point-min)
   (search-forward " ")
   (let ((status (substring-no-properties (thing-at-point 'word))))
@@ -195,6 +195,7 @@ The template should contain four %s placeholders for:
              status expected type endpoint))))
 
 (defun claudia--claude-ai-request-strip-header ()
+  "Strip HTTP headers from current buffer starting at point-min."
   (re-search-forward "^$")
   (forward-line)
   (delete-region (point-min) (point))
@@ -238,6 +239,12 @@ basic completion event streams."
               (content-type 'application/json)
               (callback-success nil)
               (encoding 'ascii))
+  "Make request to Claude API at ENDPOINT with optional request parameters.
+Send request of type TYPE (default \"GET\") to ENDPOINT expecting HTTP status
+EXPECT-STATUS (default \"200\"). The request body DATA if non-nil is encoded
+using ENCODING (default 'ascii) and sent with CONTENT-TYPE (default
+'application/json). On success, CALLBACK-SUCCESS is called with the response
+buffer if provided."
   (let* ((url (format "%s/organizations/%s/%s"
                       claudia-api-url claudia-organization-id endpoint))
          (headers
@@ -259,17 +266,20 @@ basic completion event streams."
      claudia--url-retrieve-inhibit-cookies)))
 
 (defun claudia--claude-ai-json-callback (callback)
+  "Wrap CALLBACK to parse its input as json before being called."
   #'(lambda (buf)
       (let ((content (with-current-buffer buf (json-read))))
         (funcall callback content))))
 
 (defun claudia--claude-ai-simple-json-callback (msg property)
+  "A simple json callback, printing out PROPERTY of its input along with MSG."
   (claudia--claude-ai-json-callback
    #'(lambda (response)
        (let ((val (alist-get property response)))
          (message "%s: %s" msg val)))))
 
 (defun claudia--claude-ai-sse-callback (callback)
+  "Wrap CALLBACK to parse its input as server-side-event before being called."
   #'(lambda (buf)
       (funcall
        callback
@@ -280,6 +290,7 @@ basic completion event streams."
 ;; projects
 
 (defun claudia--claude-ai-request-get-projects (callback)
+  "Call CALLBACK with the result of requesting all projects from Claude.ai."
   (let ((callback (claudia--claude-ai-json-callback callback)))
     (claudia--claude-ai-request
      "projects"
@@ -287,6 +298,10 @@ basic completion event streams."
      :callback-success callback)))
 
 (defun claudia--claude-ai-request-post-project (&optional name desc template callback)
+  "Create a new Claude.ai project.
+Optionally create it with NAME, description DESC, prompting TEMPLATE.  If
+CALLBACK is non-nil it is called with the resulting json object from creating
+the project."
   (unless name (setq name "[no name]"))
   (unless desc (setq desc "[no desc]"))
   (let* ((payload `(("name" . ,name)
@@ -305,6 +320,7 @@ basic completion event streams."
      :callback-success callback)))
 
 (defun claudia--claude-ai-request-delete-project (id)
+  "Delete project with ID from Claude.ai and message when deletion is complete."
   (claudia--claude-ai-request
    (format "projects/%s" id)
    :type "DELETE"
@@ -312,6 +328,7 @@ basic completion event streams."
    :callback-success '(lambda (_) (message "project deleted"))))
 
 (defun claudia--claude-ai-request-put-project (project prompt-template)
+  "Update project PROJECT with PROMPT-TEMPLATE using Claude.ai PUT endpoint."
   (let ((payload `(("prompt_template" . ,prompt-template)))
         (callback (claudia--claude-ai-simple-json-callback "updated project" 'uuid)))
     (claudia--claude-ai-request
@@ -324,6 +341,8 @@ basic completion event streams."
 ;; project docs
 
 (defun claudia--claude-ai-request-post-project-docs (project file-name content &optional callback)
+  "Add document to PROJECT with FILE-NAME and CONTENT, optionally calling CALLBACK.
+When CALLBACK is nil, a simple message is displayed when the document is created."
   (let ((payload `(("file_name" . ,file-name) ("content" . ,content)))
         (callback (if callback
                       (claudia--claude-ai-json-callback callback)
@@ -338,6 +357,7 @@ basic completion event streams."
      :callback-success callback)))
 
 (defun claudia--claude-ai-request-get-project-docs (project callback)
+  "Get documents from PROJECT and call CALLBACK with json-encoded response."
   (let ((callback (claudia--claude-ai-json-callback callback)))
     (claudia--claude-ai-request
      (format "projects/%s/docs" project)
@@ -346,6 +366,7 @@ basic completion event streams."
      :callback-success callback)))
 
 (defun claudia--claude-ai-request-delete-project-doc (project doc &optional silent)
+  "Delete document DOC from PROJECT, message unless SILENT is non-nil."
   (claudia--claude-ai-request
    (format "projects/%s/docs/%s" project doc)
    :type "DELETE"
@@ -356,6 +377,7 @@ basic completion event streams."
 ;; chats
 
 (defun claudia--claude-ai-request-post-chat (name &optional project model callback)
+  "Create new chat with NAME, optionally bound to PROJECT and MODEL, then call CALLBACK."
   (let ((payload `(("uuid" . ,(format "%s" (uuidgen-4)))
                    ("name" . ,name)))
         (callback (or callback
@@ -370,6 +392,7 @@ basic completion event streams."
      :callback-success callback)))
 
 (defun claudia--claude-ai-request-get-chats (callback)
+  "Get available chats from Claude.ai and call CALLBACK with json-encoded response."
   (let ((callback (claudia--claude-ai-json-callback callback)))
     (claudia--claude-ai-request
      "chat_conversations"
@@ -377,6 +400,7 @@ basic completion event streams."
      :callback-success callback)))
 
 (defun claudia--claude-ai-request-get-chat (id callback)
+  "Get chat with ID from Claude.ai and call CALLBACK with json-encoded response tree."
   (let ((callback (claudia--claude-ai-json-callback callback)))
     (claudia--claude-ai-request
      (format "chat_conversations/%s?tree=true&rendering_mode=messages" id)
@@ -384,6 +408,7 @@ basic completion event streams."
      :callback-success callback)))
 
 (defun claudia--claude-ai-request-delete-chat (id)
+  "Delete chat with ID from Claude.ai and message when deletion is complete."
   (claudia--claude-ai-request
    (format "chat_conversations/%s" id)
    :type "DELETE"
@@ -393,6 +418,7 @@ basic completion event streams."
 ;; chat completion
 
 (defun claudia--claude-ai-request-post-chat-completion (chat prompt callback)
+  "Send PROMPT to chat CHAT and call CALLBACK with server-sent event response."
   (let ((payload `(("prompt" . ,prompt) ("rendering_mode" . "messages")))
         (callback (claudia--claude-ai-sse-callback callback)))
     (claudia--claude-ai-request
@@ -413,7 +439,7 @@ basic completion event streams."
   (forward-line)
   (if (search-forward-regexp claudia--chat-prompt-regex nil t)
       (beginning-of-line)
-    (user-error "No more prompts found.")))
+    (user-error "No more prompts found")))
 
 (defun claudia-chat-previous-prompt ()
   "Move to the previous prompt in the Claude chat buffer."
@@ -421,7 +447,7 @@ basic completion event streams."
   (claudia--assert-chat-buffer-is-showing)
   (if (search-backward-regexp claudia--chat-prompt-regex-you nil t)
       (beginning-of-line)
-    (user-error "No previous prompts found.")))
+    (user-error "No previous prompts found")))
 
 (defun claudia--imenu-create-chat-index ()
   "Create and return a flat imenu index alist for the current buffer.
@@ -452,19 +478,19 @@ See `imenu-create-index-function' and `imenu--index-alist' for details."
         #'claudia--imenu-create-chat-index))
 
 (defun claudia--chat-buffer ()
-  "Get or create the current chat list buffer"
+  "Get or create the current chat list buffer."
   (with-current-buffer (get-buffer-create "*claudia-chat*")
     (claudia-chat-mode)
     (current-buffer)))
 
 (defun claudia--assert-chat-buffer-is-showing ()
-  "Signal a user-error if the chat buffer is not the current buffer"
+  "Signal a user-error if the chat buffer is not the current buffer."
   (let ((buf (claudia--chat-buffer)))
     (unless (eq buf (current-buffer))
       (user-error "%s not the current buffer" (buffer-name buf)))))
 
 (defun claudia--chat-erase-buffer ()
-  "Erase the content of the *claudia-chat* buffer"
+  "Erase the content of the *claudia-chat* buffer."
   (with-current-buffer (claudia--chat-buffer)
     (let ((inhibit-read-only t))
       (erase-buffer))))
@@ -477,6 +503,9 @@ See `imenu-create-index-function' and `imenu--index-alist' for details."
    #'claudia--refresh-chat-buffer-callback))
 
 (defun claudia--refresh-chat-buffer-callback (chats)
+  "Process CHATS message tree and render each message into the current chat buffer.
+Extracts sender, timestamp, and message content from each message, formats appropriately for
+display, and inserts into buffer using `claudia--chat-insert-entry'."
   (claudia--chat-erase-buffer)
   (let ((messages (alist-get 'chat_messages chats)))
     (dolist (msg (append messages nil))
@@ -565,12 +594,13 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
       (claudia-chat-list-refresh))))
 
 (defun claudia--safe-fmt-time (time)
+  "Format TIME as date-time string, returning '[no-time]' if TIME is invalid."
   (condition-case nil
       (format-time-string "%F %T" (date-to-time time))
     (error "[no-time]")))
 
 (defun claudia--chat-list-buffer ()
-  "Get or create the current chat list buffer"
+  "Get or create the current chat list buffer."
   (get-buffer-create "*claudia-chat-list*"))
 
 ;;;###autoload
@@ -603,7 +633,7 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
 
 
 (defun claudia--assert-chat-list-is-showing ()
-  "Signal a user-error if the chat list is not the current buffer"
+  "Signal a user-error if the chat list is not the current buffer."
   (let ((buf (claudia--chat-list-buffer)))
     (unless (eq buf (current-buffer))
       (user-error "%s not the current buffer" (buffer-name buf)))))
@@ -653,41 +683,43 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
 ;; basic functions to create/select projects, chats, docs etc.
 
 (defcustom claudia-default-project-name "created with claudia.el"
-  "If non-nil use this name for new projects"
+  "If non-nil use this name for new projects."
   :type 'string
   :group 'claudia)
 
 (defcustom claudia-default-project-description "created with claudia.el"
-  "If non-nil use this name for new projects"
+  "If non-nil use this name for new projects."
   :type 'string
   :group 'claudia)
 
 (defcustom claudia-default-project-prompt-template nil
-  "If non-nil use this prompt template for new projects"
+  "If non-nil use this prompt template for new projects."
   :type 'string
   :group 'claudia)
 
 (defcustom claudia-default-chat-name "[claudia.el]"
-  "If non-nil use this name for new chats"
+  "If non-nil use this name for new chats."
   :type 'string
   :group 'claudia)
 
 (defvar claudia--current-project nil
-  "ID of current project on Claude.ai")
+  "ID of current project on Claude.ai.")
 
 (defvar claudia--current-chat nil
-  "ID of current chat conversation on Claude.ai")
+  "ID of current chat conversation on Claude.ai.")
 
 (defun claudia--assert-current-project-is-set ()
+  "Assert `claudia-current-project' is set."
   (unless claudia--current-project
-    (user-error "No current project set. Run `claudia-select-or-create-project' to select an existing one or create a new.")))
+    (user-error "No current project set.  Run `claudia-select-or-create-project' to select an existing one or create a new")))
 
 (defun claudia--assert-current-chat-is-set ()
+  "Assert `claudia-current-chat' is set."
   (unless claudia--current-chat
-    (user-error "No current chat set. Run `claudia-select-or-create-chat' to select an existing one or create a new.")))
+    (user-error "No current chat set.  Run `claudia-select-or-create-chat' to select an existing one or create a new")))
 
 (defun claudia--claude-ai-new-project (name &optional description template)
-  "Create a new Claude.ai project."
+  "Create a new Claude.ai project with NAME, DESCRIPTION and TEMPLATE."
   (let* ((desc (or description claudia-default-project-description
                    (read-string "project description: ")))
          (template (or template claudia-default-project-prompt-template "no template"))
@@ -701,7 +733,7 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
     (claudia--claude-ai-request-post-project name desc template callback)))
 
 (defun claudia--claude-ai-new-chat (name prompt)
-  "Create a new Claude.ai chat."
+  "Create a new Claude.ai chat with NAME and starting PROMPT."
   (claudia--assert-current-project-is-set)
   (let* ((callback
           (claudia--claude-ai-json-callback
@@ -764,6 +796,7 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
 
 ;;;###autoload
 (defun claudia-delete-project-knowledge ()
+  "Completing-reads a project doc to delete from the current project."
   (interactive)
   (claudia--assert-current-project-is-set)
   (let ((callback (claudia--completing-read-callback
@@ -775,33 +808,15 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
     (claudia--claude-ai-request-get-project-docs
      claudia--current-project callback)))
 
-;; ;;;###autoload
-;; (defun claudia-delete-project-knowledge ()
-;;   (interactive)
-;;   (claudia--assert-current-project-is-set)
-;;   (claudia--claude-ai-request-get-project-docs
-;;    claudia--current-project
-;;    #'claudia--delete-project-docs-callback))
-
-;; (defun claudia--delete-project-docs-callback (docs)
-;;   (let* ((map-docs (lambda (doc) (cons (alist-get 'uuid doc) doc)))
-;;          (completion-table (seq-map map-docs docs))
-;;          (annotation-fun (lambda (s)
-;;                            (if-let ((val (assoc s minibuffer-completion-table))
-;;                                     (doc-name (alist-get 'file_name (cdr val))))
-;;                                (format " %s" doc-name))))
-;;          (completion-extra-properties (list :annotation-function annotation-fun))
-;;          (doc-id (completing-read "Select a document to delete: "
-;;                                   completion-table nil t)))
-;;     (claudia--claude-ai-request-delete-project-doc
-;;      claudia--current-project doc-id)))
-
 (cl-defun claudia--completing-read-callback
     (prompt callback
             &key
             (name 'name)
             (predicate nil)
             (require-match 't))
+  "Return a callback for completing-reading with PROMPT and CALLBACK.
+See `completing-read' for the meaning of the optional arguments NAME,
+PREDICATE and REQUIRE-MATCH."
   #'(lambda (collection)
       (let* ((map-id (lambda (x) (cons (alist-get 'uuid x) x)))
              (completion-table (seq-map map-id collection))
@@ -835,7 +850,7 @@ buffer."
      claudia--current-chat prompt callback)))
 
 (defun claudia--chat-completion-callback (res)
-  "Default callback for `claudia--claude-ai-completion'."
+  "Insert `claudia--claude-ai-completion's resulting RES in *claudia-chat*."
   (claudia--chat-insert-ai-response res))
 
 ;;;###autoload
@@ -863,6 +878,25 @@ buffer."
   "Insert new RESPONSE from the user at TIME into the *claudia-chat* buffer."
   (claudia--chat-insert-entry "Claude" response time))
 
+(defcustom claudia--inhibit-prompt-to-kill-ring-in-chat t
+  "If `claudia-prompt-to-kill-ring' prompts are left out from the chat buffer.
+This variable only has an effect in the current *claudia-chat* buffer.  When
+old chat conversations are loaded the variable is not honered."
+  :type 'string
+  :group 'claudia)
+
+;;;###autoload
+(defun claudia-prompt-to-kill-ring ()
+  "Send a prompt to Claude.ai and receive the respones in the `kill-ring'."
+  (interactive)
+  (claudia--assert-current-chat-is-set)
+  (let* ((prompt (read-string "prompt: "))
+         (callback #'(lambda (res)
+                       (kill-new res)
+                       (message "claudia: kill ring updated")))
+         (inhibit-prompt (or claudia--inhibit-prompt-to-kill-ring-in-chat 't)))
+    (claudia--claude-ai-completion prompt callback inhibit-prompt)))
+
 ;; project knowledge
 
 ;;;###autoload
@@ -882,7 +916,7 @@ buffer."
   "Add the current active region to the current project's knowledge."
   (interactive)
   (unless (use-region-p)
-    (user-error "region inactive."))
+    (user-error "Region inactive"))
   (claudia--assert-current-project-is-set)
   (let* ((file-name (format "%s-region-[%s-%s]"
                             (buffer-name (current-buffer))
@@ -898,7 +932,7 @@ buffer."
 ;; claudia-mode
 
 (defcustom claudia-max-recent-buffers 3
-  "Max number of recent buffers added to the project's knowledge"
+  "Max number of recent buffers added to the project's knowledge."
   :type 'string
   :group 'claudia)
 
@@ -913,20 +947,23 @@ buffer."
   :group 'claudia)
 
 (defvar claudia--recent-buffers-alist nil
-  "alist of (buffer . metadata) recently added to the project's knowledge.")
+  "Alist of (buffer . metadata) recently added to the project's knowledge.")
 
 (defun claudia--expand-buffer-name (buffer)
+  "Expand BUFFER name."
   (concat "claudia-buffer:"
           (or (buffer-file-name buffer)
               (concat default-directory (buffer-name buffer)))))
 
 (defun claudia--add-doc-to-recent-buffers-callback (res)
+  "Callback for adding the project doc from RES to the recent buffers alist."
   (unless (not claudia-mode)
     (let ((data (claudia--docs-metadata res)))
       (add-to-list 'claudia--recent-buffers-alist data t)
       (claudia--maybe-cleanup-buffer-docs))))
 
 (defun claudia--window-change-hook (_)
+  "Update the project knowlege base when the current window change."
   (let* ((buffer (current-buffer))
          (file-name (claudia--expand-buffer-name buffer))
          (content (with-current-buffer buffer
@@ -950,6 +987,7 @@ an existing association for FILE-NAME."
                  claudia-ignore-buffers-major-mode-regexps))))
 
 (defun claudia--docs-metadata (doc)
+  "Extract metadata from DOC."
   (let* ((name (alist-get 'file_name doc))
          (id (alist-get 'uuid doc))
          (content (alist-get 'content doc))
@@ -957,12 +995,12 @@ an existing association for FILE-NAME."
     `(,name . (id ,id size ,size))))
 
 (defun claudia--maybe-cleanup-buffer-docs ()
-  "Remove docs from `claudia--recent-buffers-alist' and the current project.  If
-`claudia-max-recent-buffers' is set, then no more `claudia-buffer' docs will be
-kept in the project knowledge.  If `claudia-max-recent-buffers-content-length'
-is set to a number, then docs will be cleaned up once the total number of
-characeters in `claudia-buffer' buffers exceeds its value (starting with the
-least recently visited buffer's doc)."
+  "Remove docs from `claudia--recent-buffers-alist' and the current project.
+If `claudia-max-recent-buffers' is set, then no more `claudia-buffer' docs will
+be kept in the project knowledge.  If
+`claudia-max-recent-buffers-content-length' is set to a number, then docs will
+be cleaned up once the total number of characeters in `claudia-buffer' buffers
+exceeds its value (starting with the least recently visited buffer's doc)."
   (let ((delete-next-and
          #'(lambda (continuation)
              (let* ((next (pop claudia--recent-buffers-alist))
@@ -982,11 +1020,10 @@ least recently visited buffer's doc)."
              delete-next-and
              #'(lambda (next)
                  (setq content-length
-                       (- content-length (plist-get (cdr next) 'size))))))
-          ))))
+                       (- content-length (plist-get (cdr next) 'size))))))))))
 
 (defun claudia--maybe-refresh-buffer-docs ()
-  "Sets `claudia--recent-buffers-alist' from the current project's knowledge.
+  "Set `claudia--recent-buffers-alist' from the current project's knowledge.
 This function is called when switching to a different project, but only has an
 effect if `claudia-mode' is active."
   (unless (not claudia-mode)
@@ -1029,15 +1066,15 @@ effect if `claudia-mode' is active."
 
 ;;;###autoload
 (define-minor-mode claudia-mode
-  "Enhance Emacs with AI tools based on Claude.ai"
+  "Enhance Emacs with AI tools based on Claude.ai."
   :global t :group 'claudia
   :lighter " claudia"
   (if claudia-mode
       (progn
         (unless claudia-session-key
-          (user-error "`claudia-session-key' not set."))
+          (user-error "`claudia-session-key' not set"))
         (unless claudia-organization-id
-          (user-error "`claudia-organization-id' not set."))
+          (user-error "`claudia-organization-id' not set"))
         (claudia--assert-current-project-is-set)
         (add-hook 'window-selection-change-functions #'claudia--window-change-hook)
         (add-hook 'after-save-hook #'claudia--after-save-hook)
