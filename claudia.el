@@ -26,7 +26,6 @@
 ;; https://www.anthropic.com/legal/consumer-terms
 
 (require 'json)
-(require 'request)
 (require 'tabulated-list)
 (require 'url)
 (require 'uuidgen)
@@ -267,20 +266,20 @@ buffer if provided."
 
 (defun claudia--claude-ai-json-callback (callback)
   "Wrap CALLBACK to parse its input as json before being called."
-  #'(lambda (buf)
-      (let ((content (with-current-buffer buf (json-read))))
-        (funcall callback content))))
+  (lambda (buf)
+    (let ((content (with-current-buffer buf (json-read))))
+      (funcall callback content))))
 
 (defun claudia--claude-ai-simple-json-callback (msg property)
   "A simple json callback, printing out PROPERTY of its input along with MSG."
   (claudia--claude-ai-json-callback
-   #'(lambda (response)
-       (let ((val (alist-get property response)))
-         (message "%s: %s" msg val)))))
+   (lambda (response)
+     (let ((val (alist-get property response)))
+       (message "%s: %s" msg val)))))
 
 (defun claudia--claude-ai-sse-callback (callback)
   "Wrap CALLBACK to parse its input as server-side-event before being called."
-  #'(lambda (buf)
+  #'(l(lambdaf)
       (funcall
        callback
        (with-current-buffer
@@ -608,27 +607,27 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
   "Refresh the list of chat conversations."
   (interactive)
   (let ((callback
-         #'(lambda (chats)
-             (let ((list-entries
-                    (cl-loop for chat across chats if chat collect
-                             (let* ((project (alist-get 'project chat))
-                                    (project-id-and-name
-                                     (if project
-                                         (cons (alist-get 'uuid project) (alist-get 'name project))
-                                       (cons "[no project]" "[no project]")))
-                                    (project-name
-                                     (propertize (cdr project-id-and-name) 'project-id (car project-id-and-name))))
-                               `(,(alist-get 'uuid chat)
-                                 [,(alist-get 'name chat)
-                                  ,project-name
-                                  ,(claudia--safe-fmt-time (alist-get 'updated_at chat))
-                                  ,(claudia--safe-fmt-time (alist-get 'created_at chat))
-                                  ])))))
-               (with-current-buffer (claudia--chat-list-buffer)
-                 (setq tabulated-list-entries list-entries)
-                 (tabulated-list-print t)
-                 (switch-to-buffer (current-buffer)))
-               (message "refreshed chat list")))))
+         (lambda (chats)
+           (let ((list-entries
+                  (cl-loop for chat across chats if chat collect
+                           (let* ((project (alist-get 'project chat))
+                                  (project-id-and-name
+                                   (if project
+                                       (cons (alist-get 'uuid project) (alist-get 'name project))
+                                     (cons "[no project]" "[no project]")))
+                                  (project-name
+                                   (propertize (cdr project-id-and-name) 'project-id (car project-id-and-name))))
+                             `(,(alist-get 'uuid chat)
+                               [,(alist-get 'name chat)
+                                ,project-name
+                                ,(claudia--safe-fmt-time (alist-get 'updated_at chat))
+                                ,(claudia--safe-fmt-time (alist-get 'created_at chat))
+                                ])))))
+             (with-current-buffer (claudia--chat-list-buffer)
+               (setq tabulated-list-entries list-entries)
+               (tabulated-list-print t)
+               (switch-to-buffer (current-buffer)))
+             (message "refreshed chat list")))))
     (claudia--claude-ai-request-get-chats callback)))
 
 
@@ -725,11 +724,11 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
          (template (or template claudia-default-project-prompt-template "no template"))
          (callback
           (claudia--claude-ai-json-callback
-           #'(lambda (response)
-               (let ((id (alist-get 'uuid response)))
-                 (setq claudia--current-project id)
-                 (claudia--maybe-refresh-buffer-docs)
-                 (message "claude.ai project created"))))))
+           (lambda (response)
+             (let ((id (alist-get 'uuid response)))
+               (setq claudia--current-project id)
+               (claudia--maybe-refresh-buffer-docs)
+               (message "claude.ai project created"))))))
     (claudia--claude-ai-request-post-project name desc template callback)))
 
 (defun claudia--claude-ai-new-chat (name prompt)
@@ -737,12 +736,12 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
   (claudia--assert-current-project-is-set)
   (let* ((callback
           (claudia--claude-ai-json-callback
-           #'(lambda (response)
-               (let ((id (alist-get 'uuid response)))
-                 (message "Chat created. Waiting for Claude.ai completion...")
-                 (setq claudia--current-chat id)
-                 (claudia--chat-erase-buffer)
-                 (claudia--claude-ai-completion prompt))))))
+           (lambda (response)
+             (let ((id (alist-get 'uuid response)))
+               (message "Chat created. Waiting for Claude.ai completion...")
+               (setq claudia--current-chat id)
+               (claudia--chat-erase-buffer)
+               (claudia--claude-ai-completion prompt))))))
     (claudia--claude-ai-request-post-chat
      name claudia--current-project claudia-model callback)))
 
@@ -817,7 +816,7 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
   "Return a callback for completing-reading with PROMPT and CALLBACK.
 See `completing-read' for the meaning of the optional arguments NAME,
 PREDICATE and REQUIRE-MATCH."
-  #'(lambda (collection)
+  #'(lambda (llection)
       (let* ((map-id (lambda (x) (cons (alist-get 'uuid x) x)))
              (completion-table (seq-map map-id collection))
              (annotation-fun (lambda (s)
@@ -878,7 +877,7 @@ buffer."
   "Insert new RESPONSE from the user at TIME into the *claudia-chat* buffer."
   (claudia--chat-insert-entry "Claude" response time))
 
-(defcustom claudia--inhibit-prompt-to-kill-ring-in-chat t
+(defcustom claudia-inhibit-prompt-to-kill-ring-in-chat t
   "If `claudia-prompt-to-kill-ring' prompts are left out from the chat buffer.
 This variable only has an effect in the current *claudia-chat* buffer.  When
 old chat conversations are loaded the variable is not honered."
@@ -891,10 +890,10 @@ old chat conversations are loaded the variable is not honered."
   (interactive)
   (claudia--assert-current-chat-is-set)
   (let* ((prompt (read-string "prompt: "))
-         (callback #'(lambda (res)
-                       (kill-new res)
-                       (message "claudia: kill ring updated")))
-         (inhibit-prompt (or claudia--inhibit-prompt-to-kill-ring-in-chat 't)))
+         (callback (lambda (res)
+                     (kill-new res)
+                     (message "claudia: kill ring updated")))
+         (inhibit-prompt (or claudia-inhibit-prompt-to-kill-ring-in-chat 't)))
     (claudia--claude-ai-completion prompt callback inhibit-prompt)))
 
 ;; project knowledge
@@ -1002,7 +1001,7 @@ be kept in the project knowledge.  If
 be cleaned up once the total number of characeters in `claudia-buffer' buffers
 exceeds its value (starting with the least recently visited buffer's doc)."
   (let ((delete-next-and
-         #'(lambda (continuation)
+         #'(l(da (continuation)
              (let* ((next (pop claudia--recent-buffers-alist))
                     (doc-id (plist-get (cdr next) 'id)))
                (claudia--claude-ai-request-delete-project-doc
@@ -1018,19 +1017,19 @@ exceeds its value (starting with the least recently visited buffer's doc)."
           (while (> content-length claudia-max-recent-buffers-content-length)
             (funcall
              delete-next-and
-             #'(lambda (next)
+             (lambda (next)
                  (setq content-length
                        (- content-length (plist-get (cdr next) 'size))))))))))
 
-(defun claudia--maybe-refresh-buffer-docs ()
-  "Set `claudia--recent-buffers-alist' from the current project's knowledge.
+  (defun claudia--maybe-refresh-buffer-docs ()
+    "Set `claudia--recent-buffers-alist' from the current project's knowledge.
 This function is called when switching to a different project, but only has an
 effect if `claudia-mode' is active."
-  (unless (not claudia-mode)
-    (claudia--assert-current-project-is-set)
-    ;; remove the window hook to avoid races
-    (remove-hook 'window-selection-change-functions #'claudia--window-change-hook)
-    (let ((callback #'(lambda (docs)
+    (unless (not claudia-mode)
+      (claudia--assert-current-project-is-set)
+      ;; remove the window hook to avoid races
+      (remove-hook 'window-selection-change-functions #'claudia--window-change-hook)
+      (let ((callback (lambda (docs)
                         (setq claudia--recent-buffers-alist nil)
                         (dolist (doc (append docs nil))
                           (when-let* ((name (alist-get 'file_name doc))
@@ -1040,8 +1039,8 @@ effect if `claudia-mode' is active."
                         (add-hook
                          'window-selection-change-functions
                          #'claudia--window-change-hook))))
-      (claudia--claude-ai-request-get-project-docs
-       claudia--current-project callback))))
+        (claudia--claude-ai-request-get-project-docs
+         claudia--current-project callback))))
 
 (defun claudia--after-save-hook ()
   "Hook to update project knowledge when a buffer is saved."
