@@ -227,8 +227,8 @@ basic completion event streams."
       (setq text (substring text 1)))
     text))
 
-(setq claudia--url-retrieve-silent t)
-(setq claudia--url-retrieve-inhibit-cookies nil)
+(defvar claudia--url-retrieve-silent t)
+(defvar claudia--url-retrieve-inhibit-cookies nil)
 
 (cl-defun claudia--claude-ai-request
     (endpoint &key
@@ -956,7 +956,7 @@ old chat conversations are loaded the variable is not honered."
 
 (defun claudia--add-doc-to-recent-buffers-callback (res)
   "Callback for adding the project doc from RES to the recent buffers alist."
-  (unless (not claudia-mode)
+  (when claudia-mode
     (let ((data (claudia--docs-metadata res)))
       (add-to-list 'claudia--recent-buffers-alist data t)
       (claudia--maybe-cleanup-buffer-docs))))
@@ -1001,12 +1001,12 @@ be kept in the project knowledge.  If
 be cleaned up once the total number of characeters in `claudia-buffer' buffers
 exceeds its value (starting with the least recently visited buffer's doc)."
   (let ((delete-next-and
-         #'(l(da (continuation)
-             (let* ((next (pop claudia--recent-buffers-alist))
-                    (doc-id (plist-get (cdr next) 'id)))
-               (claudia--claude-ai-request-delete-project-doc
-                claudia--current-project doc-id t)
-               (and continuation (funcall continuation next))))))
+         (lambda (continuation)
+           (let* ((next (pop claudia--recent-buffers-alist))
+                  (doc-id (plist-get (cdr next) 'id)))
+             (claudia--claude-ai-request-delete-project-doc
+              claudia--current-project doc-id t)
+             (and continuation (funcall continuation next))))))
     (if claudia-max-recent-buffers
         (while (length> claudia--recent-buffers-alist claudia-max-recent-buffers)
           (funcall delete-next-and nil)))
@@ -1018,33 +1018,33 @@ exceeds its value (starting with the least recently visited buffer's doc)."
             (funcall
              delete-next-and
              (lambda (next)
-                 (setq content-length
-                       (- content-length (plist-get (cdr next) 'size))))))))))
+               (setq content-length
+                     (- content-length (plist-get (cdr next) 'size))))))))))
 
-  (defun claudia--maybe-refresh-buffer-docs ()
-    "Set `claudia--recent-buffers-alist' from the current project's knowledge.
+(defun claudia--maybe-refresh-buffer-docs ()
+  "Set `claudia--recent-buffers-alist' from the current project's knowledge.
 This function is called when switching to a different project, but only has an
 effect if `claudia-mode' is active."
-    (unless (not claudia-mode)
-      (claudia--assert-current-project-is-set)
-      ;; remove the window hook to avoid races
-      (remove-hook 'window-selection-change-functions #'claudia--window-change-hook)
-      (let ((callback (lambda (docs)
-                        (setq claudia--recent-buffers-alist nil)
-                        (dolist (doc (append docs nil))
-                          (when-let* ((name (alist-get 'file_name doc))
-                                      (is-buffer-doc (string-match-p "^claudia-buffer:.*" name))
-                                      (data (claudia--docs-metadata doc)))
-                            (add-to-list 'claudia--recent-buffers-alist data t)))
-                        (add-hook
-                         'window-selection-change-functions
-                         #'claudia--window-change-hook))))
-        (claudia--claude-ai-request-get-project-docs
-         claudia--current-project callback))))
+  (when claudia-mode
+    (claudia--assert-current-project-is-set)
+    ;; remove the window hook to avoid races
+    (remove-hook 'window-selection-change-functions #'claudia--window-change-hook)
+    (let ((callback (lambda (docs)
+                      (setq claudia--recent-buffers-alist nil)
+                      (dolist (doc (append docs nil))
+                        (when-let* ((name (alist-get 'file_name doc))
+                                    (is-buffer-doc (string-match-p "^claudia-buffer:.*" name))
+                                    (data (claudia--docs-metadata doc)))
+                          (add-to-list 'claudia--recent-buffers-alist data t)))
+                      (add-hook
+                       'window-selection-change-functions
+                       #'claudia--window-change-hook))))
+      (claudia--claude-ai-request-get-project-docs
+       claudia--current-project callback))))
 
 (defun claudia--after-save-hook ()
   "Hook to update project knowledge when a buffer is saved."
-  (unless (not claudia-mode)
+  (when claudia-mode
     (claudia--assert-current-project-is-set)
     (let* ((buffer (current-buffer))
            (file-name (claudia--expand-buffer-name buffer))
