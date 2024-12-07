@@ -279,11 +279,11 @@ buffer if provided."
 
 (defun claudia--claude-ai-sse-callback (callback)
   "Wrap CALLBACK to parse its input as server-side-event before being called."
-  #'(l(lambdaf)
-      (funcall
-       callback
-       (with-current-buffer
-           buf (claudia--claude-ai-parse-sse)))))
+  (lambda (buf)
+    (funcall
+     callback
+     (with-current-buffer
+         buf (claudia--claude-ai-parse-sse)))))
 
 
 ;; projects
