@@ -816,7 +816,7 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
   "Return a callback for completing-reading with PROMPT and CALLBACK.
 See `completing-read' for the meaning of the optional arguments NAME,
 PREDICATE and REQUIRE-MATCH."
-  #'(lambda (llection)
+  #'(lambda (collection)
       (let* ((map-id (lambda (x) (cons (alist-get 'uuid x) x)))
              (completion-table (seq-map map-id collection))
              (annotation-fun (lambda (s)
