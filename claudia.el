@@ -939,6 +939,11 @@ old chat conversations are loaded the variable is not honered."
   :type 'string
   :group 'claudia)
 
+(defcustom claudia-max-recent-buffers-content-length 100000
+  "Max number of recent buffers added to the project's knowledge."
+  :type 'integer
+  :group 'claudia)
+
 (defcustom claudia-ignore-buffers-regexps nil
   "List of regexps for matching buffer names not added to the project's knowledge."
   :type 'list
