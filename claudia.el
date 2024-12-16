@@ -170,9 +170,13 @@ The template should contain four %s placeholders for:
   :group 'claudia)
 
 (defcustom claudia-session-key nil
-  "Claude session key as a string or a function that loads and returns it."
-  :type '(choice (function :tag "Function")
-                 (string :tag "String"))
+  "Claude session key as a string."
+  :type 'string
+  :group 'claudia)
+
+(defcustom claudia-organization-id nil
+  "Claude organization ID as a string."
+  :type 'string
   :group 'claudia)
 
 (defcustom claudia-model "claude-3-5-sonnet-20240620"
