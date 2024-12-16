@@ -934,7 +934,7 @@ old chat conversations are loaded the variable is not honered."
 
 ;; claudia-mode
 
-(defcustom claudia-max-recent-buffers 3
+(defcustom claudia-max-recent-buffers nil
   "Max number of recent buffers added to the project's knowledge."
   :type 'string
   :group 'claudia)
