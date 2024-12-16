@@ -772,6 +772,17 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
     (claudia--claude-ai-request-get-projects callback)))
 
 ;;;###autoload
+(defun claudia-create-chat ()
+  "Create a new chat in the current project.
+Prompts for a name or uses `claudia-default-chat-name' if it is non-nil."
+  (interactive)
+  (claudia--assert-current-project-is-set)
+  (let ((name (or claudia-default-chat-name
+                  (prompt "Enter a name to create a new chat: ")))
+        (prompt (read-string "prompt: ")))
+    (claudia--claude-ai-new-chat name prompt)))
+
+;;;###autoload
 (defun claudia-select-or-create-chat ()
   "Set the current chat with minibuffer completion."
   (interactive)
