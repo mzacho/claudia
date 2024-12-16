@@ -40,11 +40,11 @@ To install claudia from MELPA with `use-package`:
    (add-to-list 'load-path "/path/to/claudia")
    (require 'claudia)
    ```
-   
+
    or if using `use-package`:
-   
+
    ```elisp
-   (use-package claudia   
+   (use-package claudia
       :load-path "/path/to/claudia")
    ```
 
@@ -60,7 +60,7 @@ Customize `claudia-session-key` and `claudia-organization-id` with their values 
 
 ## Usage
 
-`claudia.el` provides `claudia-mode`, a global minor mode which maintains a knowledge-base of recently visited buffers using Claude.ai's project knowledge feature. When the mode is enabled, active buffer contents are automatically added to project knowledge, enhancing the output of `claudia-prompt`. File saves updates the project knowledge, and content is managed within configured size limits. 
+`claudia.el` provides `claudia-mode`, a global minor mode which maintains a knowledge-base of recently visited buffers using Claude.ai's project knowledge feature. When the mode is enabled, active buffer contents are automatically added to project knowledge, enhancing the output of `claudia-prompt`. File saves updates the project knowledge, and content is managed within configured size limits.
 
 To enable the mode, `claudia--current-project` must first be set with `claudia-select-or-create-project`. Alternatively, a default "claudia" project can be set when loading the package (e.g. with `(setq claudia--current-project "your-project-uuid")`).
 
@@ -116,26 +116,29 @@ My configuration looks something like this:
 ```elisp
 (use-package claudia
   :diminish claudia-mode
-  :bind (("C-x c RET" . claudia-prompt)         
+  :bind (("C-x c RET" . claudia-prompt)
          ("C-x c c" . claudia-select-or-create-chat)
          ("C-x c p" . claudia-select-or-create-project)
-         ("C-x c d" . claudia-delete-project-knowledge))         
-  :custom  
+         ("C-x c d" . claudia-delete-project-knowledge))
+  :custom
   ;; Claude.ai session key and organization
   (claudia-session-key "your-session-key-here")
   (claudia-organization-id "your-organization-id-here")
-  ;; My default project and chat
-  (claudia--current-project "7dfeb125-3269-431e-b0c4-d11d85936732")
-  (claudia--current-chat "deed76c0-3d24-4055-ab0a-c639868c2afb")
 
   ;; The *claudia-chat* window is always visible on my second monitor
+  ;;
+  ;; Set this to 't (the default) if you the *claude-chat* buffer
+  ;; to automatically display when a new reply is received
   (claudia-chat-display-buffer nil)
+
   ;; Ignore most buffers not containing code
   (claudia-ignore-buffers-regexps '("\\*.*\\*" "magit.*"))
   (claudia-ignore-buffers-major-mode-regexps '("dired-mode" "pdf-view-mode"))
+
   ;; I find that 100000 characters of code is about 40% of the allowed project knowledge
   (claudia-max-recent-buffers nil)
   (claudia-max-recent-buffers-content-length 100000)
+
   ;; Instruct Claude.ai to deliver concise responses formatted in markdown
   (claudia-default-project-prompt-template
       (string-join
@@ -143,9 +146,15 @@ My configuration looks something like this:
              claudia-instruction-markdown
              claudia-instruction-confirmation)
        " [NEXT INSTRUCTION] "))
-    
+
   :config
+
+  ;; My default project and chat
+  (setq claudia--current-project "7dfeb125-3269-431e-b0c4-d11d85936732")
+  (setq claudia--current-chat "deed76c0-3d24-4055-ab0a-c639868c2afb")
+
   ;; Center cursor at the top of the *claudia-chat* window
+  ;; Note: this requires that centered-cursor-mode is installed!
   (add-hook 'claudia-chat-mode-hook
           (lambda ()
             (setq-local ccm-vpos-init 0)
