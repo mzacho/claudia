@@ -149,7 +149,8 @@ My configuration looks something like this:
 
   :config
 
-  ;; My default project and chat
+  ;; My default project and chat - customize these values with your own
+  ;; default project and chat-ids after creating your first chat
   (setq claudia--current-project "7dfeb125-3269-431e-b0c4-d11d85936732")
   (setq claudia--current-chat "deed76c0-3d24-4055-ab0a-c639868c2afb")
 
