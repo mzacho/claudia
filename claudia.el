@@ -721,6 +721,11 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
   (unless claudia--current-chat
     (user-error "No current chat set.  Run `claudia-select-or-create-chat' to select an existing one or create a new")))
 
+(defun claudia--assert-anthropic-api-key-is-set ()
+  "Assert `claudia-anthropic-api-key' is set."
+  (unless claudia-anthropic-api-key
+    (user-error "No API key set. Customize `claudia-anthropic-api-key'.")))
+
 (defun claudia--claude-ai-new-project (name &optional description template)
   "Create a new Claude.ai project with NAME, DESCRIPTION and TEMPLATE."
   (let* ((desc (or description claudia-default-project-description
@@ -1178,6 +1183,8 @@ buffer if provided."
 (cl-defstruct tool
   name
   description
+  function
+  ask-before-use
   input-schema)
 
 ;; -- tool application
@@ -1192,7 +1199,7 @@ buffer if provided."
   args)
 
 (defun claudia--tool-to-alist (tool)
-  "Converts TOOL to an alist."
+  "Converts TOOL to an alist for consumption by the anthropic API."
   `(("name" .
      ,(tool-name tool))
     ("description" .
@@ -1222,6 +1229,8 @@ buffer if provided."
   `(,(make-tool
       :name "get_buffer_content"
       :description "Returns the content of the current active buffer."
+      :ask-before-use t
+      :function (lambda () (buffer-string))
       :input-schema
       (make-tool-input-schema
        :type "object"
@@ -1230,6 +1239,11 @@ buffer if provided."
     ,(make-tool
       :name "get_function_definition"
       :description "Returns definition of the given function symbol."
+      :ask-before-use t
+      :function (lambda (symbol-name)
+                  (let ((sym (intern-soft symbol-name)))
+                    (when (fboundp sym)
+                      (prin1-to-string (symbol-function sym)))))
       :input-schema
       (make-tool-input-schema
        :type "object"
@@ -1238,7 +1252,21 @@ buffer if provided."
            :name "symbol"
            :type "string"
            :description "The function symbol (i.e name)"))
-       :required '("symbol"))))
+       :required '("symbol")))
+    ,(make-tool
+      :name "emacs_message"
+      :description "Send a message to the *Messages* buffer"
+      :ask-before-use t
+      :function (lambda (msg) (message "%s" msg))
+      :input-schema
+      (make-tool-input-schema
+       :type "object"
+       :properties
+       `(,(make-tool-param
+           :name "msg"
+           :type "string"
+           :description "The message to send"))
+       :required '("msg"))))
   "List of tools to use."
   :type 'list
   :group 'claudia)
@@ -1260,16 +1288,47 @@ buffer if provided."
      :callback-success callback)
     ))
 
+(defun claudia--get-tool-def-from-name (name)
+  "Lookup tool def for NAME in `claudia-tools'."
+  (cl-some (lambda (tool) (if (string= (tool-name tool) name) tool))
+           claudia-tools))
+
 (defun claudia--tool-use-from-response (content)
   "Helper for getting the tool use requests from the response CONTENT."
-  (if-let ((is-tool-use (string= (alist-get 'type content) "tool_use"))
-           (name (alist-get 'name content))
-           (input (alist-get 'input content)))
-      content))
+  (if-let* ((is-tool-use (string= (alist-get 'type content) "tool_use"))
+            (name (alist-get 'name content))
+            (tool-def (claudia--get-tool-def-from-name name)))
+      (let ((args (alist-get 'input content)))
+        (cons tool-def args))))
 
-(defun claudia--execute-tool-prompt (tool)
-  "Prompt for TOOL use."
-  (format "Execute tool %s?" "tool-name"))
+(defun claudia--execute-tool-prompt (tool-def tool-args)
+  "Prompt for TOOL-DEF use with TOOL-ARGS."
+  (format "Execute tool %s?" (tool-name tool-def)))
+
+(defun claudia--maybe-ask-user-before-using-tool (tool-def tool-args)
+  "Ask the user if TOOL should be executed."
+  (if (tool-ask-before-use tool-def)
+      (y-or-n-p (claudia--execute-tool-prompt tool-def tool-args)))
+  't)
+
+(defun claudia--execute-tool (tool-def tool-args)
+  "Execute TOOL-DEF with TOOL-ARGS"
+  (let* ((fun (tool-function tool-def))
+         (schema (tool-input-schema tool-def))
+         (schema-props (tool-input-schema-properties schema))
+         (args nil))
+    ;; build argument list by matching formal params with actual args
+    (dolist (param (reverse schema-props))
+      (let* ((param-name (tool-param-name param))
+             (param-type (tool-param-type param))
+             (arg-val (cl-some (lambda (arg)
+                                 (let ((arg-name (car arg))
+                                       (arg-val  (cdr arg)))
+                                   (if (string= arg-name param-name)
+                                       arg-val)))
+                               tool-args)))
+        (setq args (cons arg-val args))))
+    (apply fun args)))
 
 (defun claudia--anthropic-tool-use-callback ()
   "Executes all tool uses."
@@ -1280,9 +1339,25 @@ buffer if provided."
                   (lambda (c) (if (string= (alist-get 'type c) "text")
                              (alist-get 'text c)))
                   content))
-           (tool-uses (seq-filter #'claudia--tool-use-from-response content)))
+           (tool-uses (seq-map
+                       #'claudia--tool-use-from-response
+                       (seq-filter #'claudia--tool-use-from-response content))))
       (claudia--chat-insert-ai-response text)
       (dolist (tool tool-uses)
-        (when (y-or-n-p (claudia--execute-tool-prompt tool)))))))
+        (when-let* ((tool-def (car tool))
+                    (tool-args (cdr tool))
+                    (should-use (claudia--maybe-ask-user-before-using-tool
+                                 tool-def tool-args)))
+          (claudia--execute-tool tool-def tool-args))))))
+
+;;;###autoload
+(defun claudia-prompt-with-tool-use ()
+  "Send to Anthropic API with tool use."
+  (interactive)
+  (claudia--assert-anthropic-api-key-is-set)
+  (claudia--anthropic-api-post-message
+   (read-string "prompt: ")
+   (claudia--anthropic-tool-use-callback)
+   claudia-tools))
 
 ;;; claudia.el ends here
