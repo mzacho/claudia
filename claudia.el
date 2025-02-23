@@ -165,7 +165,7 @@ The template should contain four %s placeholders for:
 ;; claude.ai api
 
 (defcustom claudia-api-url "https://api.claude.ai/api"
-  "Base URL for Claude API."
+  "Base URL for claude.ai API."
   :type 'string
   :group 'claudia)
 
@@ -1103,5 +1103,186 @@ effect if `claudia-mode' is active."
     (setq claudia--recent-buffers-alist nil)))
 
 (provide 'claudia)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; anthropic.com api
+
+(defcustom claudia-anthropic-api-url "https://api.anthropic.com/v1"
+  "Base URL for Anthropi API."
+  :type 'string
+  :group 'claudia)
+
+(defcustom claudia-anthropic-api-key nil
+  "Anthropic API key as a string."
+  :type 'string
+  :group 'claudia)
+
+(defcustom claudia-anthropic-api-version "2023-06-01"
+  "Anthropic API version."
+  :type 'string
+  :group 'claudia)
+
+(defcustom claudia-anthropic-api-max-tokens 1024
+  "The maximum number of tokens to generate before stopping."
+  :type 'integer
+  :group 'claudia)
+
+(cl-defun claudia--anthropic-api-request
+    (endpoint &key
+              (type "POST")
+              (expect-status "200")
+              (data nil)
+              (content-type 'application/json)
+              (callback-success nil)
+              (encoding 'ascii))
+  "Make request to Anthropic API at ENDPOINT with optional request parameters.
+Send request of type TYPE (default \"POST\") to ENDPOINT expecting HTTP status
+EXPECT-STATUS (default \"200\"). The request body DATA if non-nil is encoded
+using ENCODING (default 'ascii) and sent with CONTENT-TYPE (default
+'application/json). On success, CALLBACK-SUCCESS is called with the response
+buffer if provided."
+  (let* ((url (concat claudia-anthropic-api-url endpoint))
+         (headers
+          `(("content-type"      . ,(symbol-name content-type))
+            ("x-api-key"         . ,claudia-anthropic-api-key)
+            ("anthropic-version" . ,claudia-anthropic-api-version)))
+         (url-request-extra-headers headers)
+         (url-request-method type)
+         (url-retrieve-number-of-calls 1)
+         (url-request-data (and data (encode-coding-string data encoding))))
+    (url-retrieve
+     url
+     (lambda (_status expect-status callback-success)
+       (claudia--claude-ai-request-assert-status expect-status type endpoint)
+       (claudia--claude-ai-request-strip-header)
+       (if callback-success
+           (funcall callback-success (current-buffer))))
+     (list expect-status callback-success)
+     claudia--url-retrieve-silent
+     claudia--url-retrieve-inhibit-cookies)))
+
+;; tool use
+
+;; -- tool definition
+
+(cl-defstruct tool-param
+  name
+  type
+  description)
+
+(cl-defstruct tool-input-schema
+  type
+  properties
+  required)
+
+(cl-defstruct tool
+  name
+  description
+  input-schema)
+
+;; -- tool application
+
+(cl-defstruct tool-arg
+  name
+  value)
+
+(cl-defstruct tool-app
+  name
+  description
+  args)
+
+(defun claudia--tool-to-alist (tool)
+  "Converts TOOL to an alist."
+  `(("name" .
+     ,(tool-name tool))
+    ("description" .
+     ,(tool-description tool))
+    ("input_schema" .
+     (("type" .
+       ,(tool-input-schema-type
+         (tool-input-schema tool)))
+      ("properties" .
+       ,(mapcar #'claudia--tool-param-to-alist
+                (tool-input-schema-properties
+                 (tool-input-schema tool))))
+      ("required" .
+       ,(tool-input-schema-required
+         (tool-input-schema tool)))))))
+
+(defun claudia--tool-param-to-alist (param)
+  (if (tool-param-p param)
+      (let ((name (tool-param-name param))
+            (type (tool-param-type param))
+            (desc (tool-param-description param)))
+        `(,name . (("type" . ,type)
+                   ("desc" . ,desc))))))
+;; tool use
+
+(defcustom claudia-tools
+  `(,(make-tool
+      :name "get_buffer_content"
+      :description "Returns the content of the current active buffer."
+      :input-schema
+      (make-tool-input-schema
+       :type "object"
+       :properties nil
+       :required nil))
+    ,(make-tool
+      :name "get_function_definition"
+      :description "Returns definition of the given function symbol."
+      :input-schema
+      (make-tool-input-schema
+       :type "object"
+       :properties
+       `(,(make-tool-param
+           :name "symbol"
+           :type "string"
+           :description "The function symbol (i.e name)"))
+       :required '("symbol"))))
+  "List of tools to use."
+  :type 'list
+  :group 'claudia)
+
+;; messages api
+
+(defun claudia--anthropic-api-post-message (message callback &optional tools)
+  "Call CALLBACK with the result of completing message."
+  (let ((payload `(("model" . ,claudia-model)
+                   ("max_tokens" . ,claudia-anthropic-api-max-tokens)
+                   ("messages" . ((("role" . "user")
+                                   ("content" . ,message))))
+                   ("tools" . ,(mapcar #'claudia--tool-to-alist tools))))
+        (callback (claudia--claude-ai-json-callback callback)))
+    ;; (message "%s" payload)
+    (claudia--anthropic-api-request
+     "/messages"
+     :data (json-encode payload)
+     :callback-success callback)
+    ))
+
+(defun claudia--tool-use-from-response (content)
+  "Helper for getting the tool use requests from the response CONTENT."
+  (if-let ((is-tool-use (string= (alist-get 'type content) "tool_use"))
+           (name (alist-get 'name content))
+           (input (alist-get 'input content)))
+      content))
+
+(defun claudia--execute-tool-prompt (tool)
+  "Prompt for TOOL use."
+  (format "Execute tool %s?" "tool-name"))
+
+(defun claudia--anthropic-tool-use-callback ()
+  "Executes all tool uses."
+  (lambda (response)
+    (let* ((stop-reason (alist-get 'stop_reason response))
+           (content (alist-get 'content response))
+           (text (cl-some
+                  (lambda (c) (if (string= (alist-get 'type c) "text")
+                             (alist-get 'text c)))
+                  content))
+           (tool-uses (seq-filter #'claudia--tool-use-from-response content)))
+      (claudia--chat-insert-ai-response text)
+      (dolist (tool tool-uses)
+        (when (y-or-n-p (claudia--execute-tool-prompt tool)))))))
 
 ;;; claudia.el ends here
