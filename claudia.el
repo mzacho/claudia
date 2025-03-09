@@ -102,6 +102,12 @@
   :type 'boolean
   :group 'claudia)
 
+(defcustom claudia-always-clear-messages-after-completion t
+  "Whether to call `claudia-anthropic-clear-messages' after completion.
+TODO: This currently doesn't handle any error cases, i.e. if claudia fails/
+your API access is rate limited etc., you must clean up manually."
+  :type 'boolean
+  :group 'claudia)
 
 (defvar claudia--current-project nil
   "ID of current project on Claude.ai.")
@@ -1474,7 +1480,10 @@ errors."
       (claudia--append-assistant-message content)
       (pcase stop-reason
         ("tool_use" (claudia--handle-tool-use content current-buffer))
-        ("end_turn" (message "Claudia ended its turn"))
+        ("end_turn"
+         (if claudia-always-clear-messages-after-completion
+             (claudia-anthropic-clear-messages))
+         (message "Claudia ended its turn"))
         ("max_tokens" (error "Received stop reason: `max_tokens'"))
         (_ (error "Unknown stop reason: %s" stop-reason))))))
 
@@ -1488,7 +1497,6 @@ errors."
     (unless (string-empty-p prompt)
       (unless inhibit-prompt (claudia--chat-insert-user-prompt prompt))
       (setq-default claudia--current-buffer (current-buffer))
-      (message "INIT BUF: %s" claudia--current-buffer)
       (claudia--anthropic-api-post-messages
        (claudia--anthropic-api-callback (current-buffer))
        claudia-tools prompt))))
