@@ -1285,7 +1285,8 @@ buffer if provided."
 (defun claudia-anthropic-clear-messages ()
   "Reset chat message history."
   (interactive)
-  (setq claudia--anthropic-current-chat-messages nil))
+  (setq claudia--anthropic-current-chat-messages nil)
+  (message "claudia: message history cleared"))
 
 (defun claudia--append-user-message (message)
   "Append MESSAGE to `claudia--anthropic-current-chat-messages'"
@@ -1295,13 +1296,32 @@ buffer if provided."
          `((("role" . "user")
             ("content" . ,message))))))
 
+(defun claudia--filter-empty-tool-use-inputs (content)
+  "Filter away empty tool use inputs from CONTENT.
+AFAIK Anthropics messages API is designed so we should be able to echo back,
+assistant messages directly in the conversation. However tool uses from nullary tools
+seem to cause issues resulting in 'tool input must be a dictionary' errors."
+  (let ((f (lambda (item)
+             (if-let ((type (alist-get 'type item))
+                      ((string= type "tool_use"))
+                      ((not (alist-get 'input item))))
+                 ;; filter away the item's nil input
+                 ;; provide some dictionary value to avoid bad requests
+                 `((type . ,type)
+                   (id . ,(alist-get 'id item))
+                   (name . ,(alist-get 'name item))
+                   (input (FOO . 42)))
+               item))))
+    (vconcat (mapcar f content) nil)))
+
 (defun claudia--append-assistant-message (message)
   "Append MESSAGE to `claudia--anthropic-current-chat-messages'"
-  (setq claudia--anthropic-current-chat-messages
-        (append
-         claudia--anthropic-current-chat-messages
-         `((("role" . "assistant")
-            ("content" . ,message))))))
+  (let ((message (claudia--filter-empty-tool-use-inputs message)))
+    (setq claudia--anthropic-current-chat-messages
+          (append
+           claudia--anthropic-current-chat-messages
+           `((("role" . "assistant")
+              ("content" . ,message)))))))
 
 (defun claudia--anthropic-api-post-messages (callback &optional tools message)
   "Call CALLBACK after completing current messages using TOOLS and optional last MESSAGE."
@@ -1340,16 +1360,9 @@ buffer if provided."
       (y-or-n-p (claudia--execute-tool-prompt tool-def)))
   t)
 
-;;;;;;; TODO unused
-(defun claudia--type-cast-tool-arg (val ty)
-  "Cast VAL to TY"
-  (pcase ty
-    ("string" val)
-    ("number" (string-to-number val))
-    (_ (error "unknown type of tool parameter: %s (val: %s)" ty val))))
-
 (defun claudia--execute-tool (tool-def tool-args buffer)
   "Execute TOOL-DEF with TOOL-ARGS inside BUFFER."
+  ;; (message "CLAUDIA--EXECUTE-TOOL")
   (let* ((fun (tool-function tool-def))
          (schema (tool-input-schema tool-def))
          (schema-props (tool-input-schema-properties schema))
@@ -1367,6 +1380,7 @@ buffer if provided."
         (setq args (cons arg-val args))))
     (claudia--chat-insert-tool-use tool-def args buffer)
     (with-current-buffer buffer
+      ;; (message "EXECUTING TOOL %s: %s %s" (tool-name tool-def) fun args)
       (apply fun args))))
 
 (defun claudia--convert-value-to-string (value)
@@ -1394,9 +1408,9 @@ buffer if provided."
     (dolist (tool tool-uses)
       (when-let* ((tool-def (car tool))
                   (tool-use (cdr tool))
-                  (tool-args (alist-get 'input tool-use))
                   (should-use (claudia--maybe-ask-user-before-using-tool tool-def)))
-        (let* ((res (claudia--execute-tool tool-def tool-args buffer))
+        (let* ((tool-args (alist-get 'input tool-use))
+               (res (claudia--execute-tool tool-def tool-args buffer))
                (res-with-meta (claudia--fmt-tool-response res tool-use)))
           (setq tool-results (cons res-with-meta tool-results)))))
     ;; send back results
@@ -1429,9 +1443,11 @@ buffer if provided."
   "Send to Anthropic API with tool use."
   (interactive)
   (claudia--assert-anthropic-api-key-is-set)
-  (claudia--anthropic-api-post-messages
-   (claudia--anthropic-api-callback (current-buffer))
-   claudia-tools
-   (read-string "prompt: ")))
+  (let ((prompt (read-string "prompt: ")))
+    (unless (string-empty-p prompt)
+      (claudia--anthropic-api-post-messages
+       (claudia--anthropic-api-callback (current-buffer))
+       claudia-tools
+       prompt))))
 
 ;;; claudia.el ends here
