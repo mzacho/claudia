@@ -15,6 +15,74 @@ Claudia is an Emacs integration for the Claude AI assistant, providing an interf
 
 > *DISCLAIMER*: Claudia is not affiliated with Anthropic. By using Claudia you agree to use it at your own risk, and acknowledge potential violation of Anthropic's Terms of Service, for which you assume full responsibility for any consequences. Understand that Anthropic does not support this tool and please review [Anthropic's Terms of Service](https://www.anthropic.com/legal/consumer-terms) before using Claudia.
 
+## Tool use
+
+claudia has a rough tool-use implementation that can be used to provide elisp functions for claude to execute. Here's a quick demo:
+
+![](tool-use-demo.mp4)
+
+Customize `claude-tools` with the tools of your choice and use `claudia-prompt-with-tool-use`. Here are the tools used for the demo from above:
+
+```elisp
+(setq claudia-tools
+      `(,(make-claudia-tool
+          :name "ls"
+          :description "List all files and diretories in the current working directory."
+          :ask-before-use nil
+          :function (lambda (suffix)
+                      (let ((suffix (or suffix "")))
+                        (file-expand-wildcards (format "*%s" suffix))))
+          :input-schema
+          (make-claudia-tool-input-schema
+           :type "object"
+           :properties
+           `(,(make-claudia-tool-param
+               :name "suffix"
+               :type "string"
+               :description "Optional suffix (e.g \".json\")"))
+           :required nil))
+        ,(make-claudia-tool
+          :name "find_file"
+          :description "Visit file or directory."
+          :ask-before-use nil
+          :function (lambda (filename)
+                      (let ((buffer (find-file filename)))
+                        (setq-default claudia--current-buffer buffer)))
+          :input-schema
+          (make-claudia-tool-input-schema
+           :type "object"
+           :properties
+           `(,(make-claudia-tool-param
+               :name "filename"
+               :type "string"
+               :description "Visit file or directory. If visiting a directory changes the current directory. To go up a level pass '../'."))
+           :required '("filename")))
+        ,(make-claudia-tool
+          :name "get_buffer_content"
+          :description "Returns the content of the current active buffer."
+          :ask-before-use nil
+          :function (lambda () (buffer-string))
+          :input-schema
+          (make-claudia-tool-input-schema
+           :type "object"
+           :properties nil
+           :required nil))
+        ,(make-claudia-tool
+          :name "goto_line"
+          :description "Read line number and jump to the line."
+          :ask-before-use nil
+          :function (lambda (line) (goto-line line))
+          :input-schema
+          (make-claudia-tool-input-schema
+           :type "object"
+           :properties
+           `(,(make-claudia-tool-param
+               :name "line"
+               :type "number"
+               :description "Line number."))
+           :required '("line")))))
+```
+
 ## Installation
 
 #### Install from MELPA
