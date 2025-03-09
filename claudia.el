@@ -4,7 +4,7 @@
 
 ;; Author: Martin Zacho <hi@martinzacho.net>
 ;; Version: 0.1
-;; Package-Requires: ((emacs "29.1") (json "1.5") (uuidgen "0.3") (markdown-mode "2.3"))
+;; Package-Requires: ((emacs "29.1") (uuidgen "0.3") (markdown-mode "2.3"))
 ;; Keywords: ai, tools, productivity, codegen
 ;; URL: https://github.com/mzacho/claudia
 
@@ -309,6 +309,20 @@ basic completion event streams."
 (defvar claudia--url-retrieve-silent t)
 (defvar claudia--url-retrieve-inhibit-cookies nil)
 
+(defun claudia--url-request-callback (_status expected-status callback-success)
+  "See `url-retrieve' for how this is called."
+  (let ((status (claudia--claude-ai-request-parse-status)))
+    (claudia--claude-ai-request-strip-header)
+    (unwind-protect
+        (pcase status
+          ("429" (claudia--claude-ai-request-handle-rate-limit))
+          ((pred (lambda (status) (string= status expected-status)))
+           (if callback-success
+               (funcall callback-success (current-buffer))))
+          (_ (error "Claude API error, status: %s (expected %s)\nendpoint: %s %s"
+                    status expected type endpoint)))
+      (url-mark-buffer-as-dead (current-buffer)))))
+
 (cl-defun claudia--claude-ai-request
     (endpoint &key
               (type "GET")
@@ -332,13 +346,7 @@ provided."
          (url-retrieve-number-of-calls 1)
          (url-request-data (and data (encode-coding-string data encoding))))
     (url-retrieve
-     url
-     (lambda (_status expect-status callback-success)
-       (claudia--claude-ai-request-assert-status expect-status type endpoint)
-       (claudia--claude-ai-request-strip-header)
-       (if callback-success
-           (funcall callback-success (current-buffer)))
-       (url-mark-buffer-as-dead (current-buffer)))
+     url #'claudia--url-request-callback
      (list expect-status callback-success)
      claudia--url-retrieve-silent
      claudia--url-retrieve-inhibit-cookies)))
@@ -932,7 +940,7 @@ buffer."
 
 (defun claudia--stream-text (text)
   "Stream TEXT into current buffer character by character."
-  (let ((delay 0.005)
+  (let ((delay 0.0005)
         (chat-window (get-buffer-window (current-buffer))))
     (dolist (char (append text nil))
       (insert char)
@@ -1170,11 +1178,11 @@ effect if `claudia-mode' is active."
 
 (defun claudia--claude-ai-request-handle-rate-limit ()
   "Parse rate limit response and display an error message."
-  ((claudia--claude-ai-json-callback
-    (lambda (response)
-      (let ((message (alist-get 'message response)))
-        (error message))))
-   (current-buffer)))
+  (let ((callback (claudia--claude-ai-json-callback
+                   (lambda (response)
+                     (let ((message (alist-get 'message response)))
+                       (error message))))))
+    (funcall callback (current-buffer))))
 
 (cl-defun claudia--anthropic-api-request
     (endpoint &key
@@ -1198,21 +1206,10 @@ provided."
          (url-request-method type)
          (url-retrieve-number-of-calls 1)
          (url-request-data (and data (encode-coding-string data encoding))))
-    (url-retrieve
-     url
-     (lambda (_status expected-status callback-success)
-       (let ((status (claudia--claude-ai-request-parse-status)))
-         (claudia--claude-ai-request-strip-header)
-         (pcase status
-           ("429" (claudia--claude-ai-request-handle-rate-limit))
-           (expected-status
-            (if callback-success
-                (funcall callback-success (current-buffer))))
-           (_ (error "Claude API error, status: %s (expected %s)\nendpoint: %s %s"
-                     status expected type endpoint)))))
-     (list expect-status callback-success)
-     claudia--url-retrieve-silent
-     claudia--url-retrieve-inhibit-cookies)))
+    (url-retrieve url #'claudia--url-request-callback
+                  (list expect-status callback-success)
+                  claudia--url-retrieve-silent
+                  claudia--url-retrieve-inhibit-cookies)))
 
 ;; tool use
 
