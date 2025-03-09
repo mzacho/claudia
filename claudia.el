@@ -35,6 +35,8 @@
 
 ;;; Code:
 
+(defvar claudia--debug nil)
+
 (defcustom claudia-anthropic-api-url "https://api.anthropic.com/v1"
   "Base URL for Anthropi API."
   :type 'string
@@ -258,14 +260,11 @@ The template should contain four %s placeholders for:
   :type 'string
   :group 'claudia)
 
-(defun claudia--claude-ai-request-assert-status (expected type endpoint)
-  "Assert that latest request of TYPE to ENDPOINT had EXPECTED http status."
+(defun claudia--claude-ai-request-parse-status ()
+  "Parse HTTP status"
   (point-min)
   (search-forward " ")
-  (let ((status (substring-no-properties (thing-at-point 'word))))
-    (unless (string= status expected)
-      (error "Claude API error, status: %s (expected %s)\nendpoint: %s %s"
-             status expected type endpoint))))
+  (substring-no-properties (thing-at-point 'word)))
 
 (defun claudia--claude-ai-request-strip-header ()
   "Strip HTTP headers from current buffer starting at point-min."
@@ -945,13 +944,13 @@ buffer."
   "Insert new RESPONSE from the user at TIME into the *claudia-chat* buffer."
   (claudia--chat-insert-entry "Claude" response time))
 
-(defun claudia--chat-insert-tool-use (tool-def args &optional time)
+(defun claudia--chat-insert-tool-use (tool-def args buffer &optional time)
   "Insert TOOL-DEF use with ARGS at TIME into the *claudia-chat* buffer."
   (let* ((tool-name (claudia-tool-name tool-def))
-         (tool-name-fmt (if args (format "**%s**%s" tool-name args)
+         (tool-name-fmt (if (car args)
+                            (format "**%s**%s" tool-name args)
                           (format "**%s**" tool-name)))
-         (buffer claudia--current-buffer)
-         (response (format "[tool use: %s in buffer _%s_]" tool-name-fmt args buffer)))
+         (response (format "[tool use: %s in buffer **%s**]" tool-name-fmt buffer)))
     (claudia--chat-insert-entry "Claude" response time)))
 
 (defcustom claudia-inhibit-prompt-to-kill-ring-in-chat t
@@ -1149,6 +1148,14 @@ effect if `claudia-mode' is active."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; anthropic.com api
 
+(defun claudia--claude-ai-request-handle-rate-limit ()
+  "Parse rate limit response and display an error message."
+  ((claudia--claude-ai-json-callback
+    (lambda (response)
+      (let ((message (alist-get 'message response)))
+        (error message))))
+   (current-buffer)))
+
 (cl-defun claudia--anthropic-api-request
     (endpoint &key
               (type "POST")
@@ -1173,11 +1180,16 @@ provided."
          (url-request-data (and data (encode-coding-string data encoding))))
     (url-retrieve
      url
-     (lambda (_status expect-status callback-success)
-       (claudia--claude-ai-request-assert-status expect-status type endpoint)
-       (claudia--claude-ai-request-strip-header)
-       (if callback-success
-           (funcall callback-success (current-buffer))))
+     (lambda (_status expected-status callback-success)
+       (let ((status (claudia--claude-ai-request-parse-status)))
+         (claudia--claude-ai-request-strip-header)
+         (pcase status
+           ("429" (claudia--claude-ai-request-handle-rate-limit))
+           (expected-status
+            (if callback-success
+                (funcall callback-success (current-buffer))))
+           (_ (error "Claude API error, status: %s (expected %s)\nendpoint: %s %s"
+                     status expected type endpoint)))))
      (list expect-status callback-success)
      claudia--url-retrieve-silent
      claudia--url-retrieve-inhibit-cookies)))
@@ -1343,7 +1355,8 @@ errors."
                    ("messages" . ,claudia--anthropic-current-chat-messages)
                    ("tools" . ,(mapcar #'claudia--tool-to-alist tools))))
         (callback (claudia--claude-ai-json-callback callback)))
-    ;; (message "PAYLOAD: %s" payload)
+    (if claudia--debug
+        (message "PAYLOAD: %s" payload))
     (claudia--anthropic-api-request
      "/messages"
      :data (json-encode payload)
@@ -1371,9 +1384,8 @@ errors."
       (y-or-n-p (claudia--execute-tool-prompt tool-def)))
   t)
 
-(defun claudia--execute-tool (tool-def tool-args)
-  "Execute TOOL-DEF with TOOL-ARGS inside BUFFER."
-  ;; (message "CLAUDIA--EXECUTE-TOOL")
+(defun claudia--execute-tool (tool-def tool-args buffer)
+  "Execute TOOL-DEF with TOOL-ARGS inside `claudia--current-buffer' or BUFFER."
   (let* ((fun (claudia-tool-function tool-def))
          (schema (claudia-tool-input-schema tool-def))
          (schema-props (claudia-tool-input-schema-properties schema))
@@ -1389,10 +1401,10 @@ errors."
                                        arg-val)))
                                tool-args)))
         (setq args (cons arg-val args))))
-    (claudia--chat-insert-tool-use tool-def args)
-    (with-current-buffer claudia--current-buffer
-      ;; (message "EXECUTING TOOL %s: %s %s" (tool-name tool-def) fun args)
-      (apply fun args))))
+    (let ((buffer (or claudia--current-buffer buffer)))
+      (claudia--chat-insert-tool-use tool-def args buffer)
+      (with-current-buffer buffer
+        (apply fun args)))))
 
 (defun claudia--convert-value-to-string (value)
   "Convert VALUE received from Claude to a string."
@@ -1409,7 +1421,7 @@ errors."
       ("tool_use_id" . ,tool-id)
       ("content" . ,res))))
 
-(defun claudia--handle-tool-use (content)
+(defun claudia--handle-tool-use (content current-buffer)
   "Executes all tool uses from CONTENT and send back results."
   (let* ((tool-uses (seq-map
                      #'claudia--tool-use-from-response
@@ -1421,30 +1433,33 @@ errors."
                   (tool-use (cdr tool))
                   (should-use (claudia--maybe-ask-user-before-using-tool tool-def)))
         (let* ((tool-args (alist-get 'input tool-use))
-               (res (claudia--execute-tool tool-def tool-args))
+               (res (claudia--execute-tool tool-def tool-args current-buffer))
                (res-with-meta (claudia--fmt-tool-response res tool-use)))
           (setq tool-results (cons res-with-meta tool-results)))))
     ;; send back results
     (claudia--append-user-message (vconcat tool-results))
     (claudia--anthropic-api-post-messages
-     #'claudia--anthropic-api-callback claudia-tools)))
+     (claudia--anthropic-api-callback current-buffer) claudia-tools)))
 
 
-(defun claudia--anthropic-api-callback (response)
-  "Process stop reason in RESPONSE by calling dedicated functions."
-  (let* ((stop-reason (alist-get 'stop_reason response))
-         (content (alist-get 'content response))
-         (text (cl-some
-                (lambda (c) (if (string= (alist-get 'type c) "text")
-                           (alist-get 'text c)))
-                content)))
-    (claudia--chat-insert-ai-response text)
-    (claudia--append-assistant-message content)
-    (pcase stop-reason
-      ("tool_use" (claudia--handle-tool-use content))
-      ("end_turn" (message "Claudia ended its turn"))
-      ("max_tokens" (error "Received stop reason: `max_tokens'"))
-      (_ (error "Unknown stop reason: %s" stop-reason)))))
+(defun claudia--anthropic-api-callback (current-buffer)
+  "Callback to process stop reasons starting in CURRENT-BUFFER."
+  (lambda (response)
+    (if claudia--debug
+        (message "RESPONSE: \n%s" response))
+    (let* ((stop-reason (alist-get 'stop_reason response))
+           (content (alist-get 'content response))
+           (text (cl-some
+                  (lambda (c) (if (string= (alist-get 'type c) "text")
+                             (alist-get 'text c)))
+                  content)))
+      (claudia--chat-insert-ai-response text)
+      (claudia--append-assistant-message content)
+      (pcase stop-reason
+        ("tool_use" (claudia--handle-tool-use content current-buffer))
+        ("end_turn" (message "Claudia ended its turn"))
+        ("max_tokens" (error "Received stop reason: `max_tokens'"))
+        (_ (error "Unknown stop reason: %s" stop-reason))))))
 
 ;;;###autoload
 (defun claudia-prompt-with-tool-use ()
@@ -1455,8 +1470,10 @@ errors."
         (inhibit-prompt nil))
     (unless (string-empty-p prompt)
       (unless inhibit-prompt (claudia--chat-insert-user-prompt prompt))
-      (setq claudia--current-buffer (current-buffer))
+      (setq-default claudia--current-buffer (current-buffer))
+      (message "INIT BUF: %s" claudia--current-buffer)
       (claudia--anthropic-api-post-messages
-       #'claudia--anthropic-api-callback claudia-tools prompt))))
+       (claudia--anthropic-api-callback (current-buffer))
+       claudia-tools prompt))))
 
 ;;; claudia.el ends here
