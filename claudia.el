@@ -263,7 +263,8 @@ buffer if provided."
        (claudia--claude-ai-request-assert-status expect-status type endpoint)
        (claudia--claude-ai-request-strip-header)
        (if callback-success
-           (funcall callback-success (current-buffer))))
+           (funcall callback-success (current-buffer)))
+       (url-mark-buffer-as-dead (current-buffer)))
      (list expect-status callback-success)
      claudia--url-retrieve-silent
      claudia--url-retrieve-inhibit-cookies)))
