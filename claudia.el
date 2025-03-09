@@ -97,6 +97,12 @@
   :type '(repeat regexp)
   :group 'claudia)
 
+(defcustom claudia-stream-assistant-responses nil
+  "Whether to (fake) stream responses for that beloved UI effect."
+  :type 'boolean
+  :group 'claudia)
+
+
 (defvar claudia--current-project nil
   "ID of current project on Claude.ai.")
 
@@ -600,7 +606,7 @@ appropriately for display, and inserts into buffer using
              (entry (if (string= sender "Claude")
                         (substring entry 1)
                       entry)))
-        (claudia--chat-insert-entry sender entry time)))))
+        (claudia--chat-insert-entry sender entry nil time)))))
 
 ;; chat lists
 
@@ -924,25 +930,39 @@ buffer."
   (claudia--assert-current-chat-is-set)
   (claudia--claude-ai-completion (read-string "prompt: ")))
 
-(defun claudia--chat-insert-entry (entity entry &optional time)
+(defun claudia--stream-text (text)
+  "Stream TEXT into current buffer character by character."
+  (let ((delay 0.005)
+        (chat-window (get-buffer-window (current-buffer))))
+    (dolist (char (append text nil))
+      (insert char)
+      (sit-for delay)
+      (redisplay t)
+      (set-window-point chat-window (point-max)))))
+
+(defun claudia--chat-insert-entry (entity entry &optional stream time)
   "Insert new ENTRY from ENTITY at TIME into the *claudia-chat* buffer."
   (setq time (format-time-string "%F %T" (or time (current-time))))
   (with-current-buffer (claudia--chat-buffer)
     (let ((chat-window (get-buffer-window (current-buffer)))
-          (inhibit-read-only t))
+          (inhibit-read-only t)
+          (entry (format "%s\n\n" entry)))
       (goto-char (point-max))
-      (insert (format "**%s**: (%s)\n%s\n\n" entity time entry))
+      (insert (format "**%s**: (%s)\n" entity time))
+      (if stream
+          (claudia--stream-text entry)
+        (insert entry))
       (set-window-point chat-window (point-max))
       (if claudia-chat-display-buffer
           (display-buffer (current-buffer))))))
 
 (defun claudia--chat-insert-user-prompt (prompt &optional time)
   "Insert new PROMPT from the user at TIME into the *claudia-chat* buffer."
-  (claudia--chat-insert-entry "You" prompt time))
+  (claudia--chat-insert-entry "You" prompt nil time))
 
 (defun claudia--chat-insert-ai-response (response &optional time)
   "Insert new RESPONSE from the user at TIME into the *claudia-chat* buffer."
-  (claudia--chat-insert-entry "Claude" response time))
+  (claudia--chat-insert-entry "Claude" response claudia-stream-assistant-responses time))
 
 (defun claudia--chat-insert-tool-use (tool-def args buffer &optional time)
   "Insert TOOL-DEF use with ARGS at TIME into the *claudia-chat* buffer."
@@ -951,7 +971,7 @@ buffer."
                             (format "**%s**%s" tool-name args)
                           (format "**%s**" tool-name)))
          (response (format "[tool use: %s in buffer **%s**]" tool-name-fmt buffer)))
-    (claudia--chat-insert-entry "Claude" response time)))
+    (claudia--chat-insert-entry "Claude" response nil time)))
 
 (defcustom claudia-inhibit-prompt-to-kill-ring-in-chat t
   "Whether `claudia-prompt-to-kill-ring' prompts aren't echoed in the chat buffer.
