@@ -4,7 +4,7 @@
 
 ;; Author: Martin Zacho <hi@martinzacho.net>
 ;; Version: 0.1
-;; Package-Requires: ((emacs "29.1") (uuidgen "0.3") (markdown-mode "2.3"))
+;; Package-Requires: ((emacs "29.1") (json "1.5") (uuidgen "0.3") (markdown-mode "2.3"))
 ;; Keywords: ai, tools, productivity, codegen
 ;; URL: https://github.com/mzacho/claudia
 
@@ -29,10 +29,77 @@
 (require 'tabulated-list)
 (require 'url)
 (require 'uuidgen)
+(require 'markdown-mode)
 
 ;; instructions
 
 ;;; Code:
+
+(defcustom claudia-anthropic-api-url "https://api.anthropic.com/v1"
+  "Base URL for Anthropi API."
+  :type 'string
+  :group 'claudia)
+
+(defcustom claudia-anthropic-api-key nil
+  "Anthropic API key as a string."
+  :type 'string
+  :group 'claudia)
+
+(defcustom claudia-anthropic-api-version "2023-06-01"
+  "Anthropic API version."
+  :type 'string
+  :group 'claudia)
+
+(defcustom claudia-anthropic-api-max-tokens 1024
+  "The maximum number of tokens to generate before stopping."
+  :type 'integer
+  :group 'claudia)
+
+(defcustom claudia-default-project-name "created with claudia.el"
+  "If non-nil use this name for new projects."
+  :type 'string
+  :group 'claudia)
+
+(defcustom claudia-default-project-description "created with claudia.el"
+  "If non-nil use this name for new projects."
+  :type 'string
+  :group 'claudia)
+
+(defcustom claudia-default-project-prompt-template nil
+  "If non-nil use this prompt template for new projects."
+  :type 'string
+  :group 'claudia)
+
+(defcustom claudia-default-chat-name "[claudia.el]"
+  "If non-nil use this name for new chats."
+  :type 'string
+  :group 'claudia)
+
+(defcustom claudia-max-recent-buffers nil
+  "Max number of recent buffers added to the project's knowledge."
+  :type 'string
+  :group 'claudia)
+
+(defcustom claudia-max-recent-buffers-content-length 100000
+  "Max number of recent buffers added to the project's knowledge."
+  :type 'integer
+  :group 'claudia)
+
+(defcustom claudia-ignore-buffers-regexps nil
+  "List of regexps for matching buffer names not added to the project's knowledge."
+  :type '(repeat regexp)
+  :group 'claudia)
+
+(defcustom claudia-ignore-buffers-major-mode-regexps nil
+  "List of regexps for matching buffer modes not added to the project's knowledge."
+  :type '(repeat regexp)
+  :group 'claudia)
+
+(defvar claudia--current-project nil
+  "ID of current project on Claude.ai.")
+
+(defvar claudia--current-chat nil
+  "ID of current chat conversation on Claude.ai.")
 
 (defcustom claudia-instruction-initial
   "For this entire conversation, please skip any introductory
@@ -243,11 +310,10 @@ basic completion event streams."
               (callback-success nil)
               (encoding 'ascii))
   "Make request to Claude API at ENDPOINT with optional request parameters.
-Send request of type TYPE (default \"GET\") to ENDPOINT expecting HTTP status
-EXPECT-STATUS (default \"200\"). The request body DATA if non-nil is encoded
-using ENCODING (default 'ascii) and sent with CONTENT-TYPE (default
-'application/json). On success, CALLBACK-SUCCESS is called with the response
-buffer if provided."
+Send request of type TYPE to ENDPOINT expecting HTTP status EXPECT-STATUS. The
+request body DATA if non-nil is encoded using ENCODING and sent with
+CONTENT-TYPE. On success, CALLBACK-SUCCESS is called with the response buffer if
+provided."
   (let* ((url (format "%s/organizations/%s/%s"
                       claudia-api-url claudia-organization-id endpoint))
          (headers
@@ -329,7 +395,7 @@ the project."
    (format "projects/%s" id)
    :type "DELETE"
    :expect-status "204"
-   :callback-success '(lambda (_) (message "project deleted"))))
+   :callback-success (lambda (_) (message "project deleted"))))
 
 (defun claudia--claude-ai-request-put-project (project prompt-template)
   "Update project PROJECT with PROMPT-TEMPLATE using Claude.ai PUT endpoint."
@@ -345,8 +411,9 @@ the project."
 ;; project docs
 
 (defun claudia--claude-ai-request-post-project-docs (project file-name content &optional callback)
-  "Add document to PROJECT with FILE-NAME and CONTENT, optionally calling CALLBACK.
-When CALLBACK is nil, a simple message is displayed when the document is created."
+  "Add document to PROJECT with FILE-NAME and CONTENT, then maybe call CALLBACK.
+When CALLBACK is nil, a simple message is displayed when the document is
+created."
   (let ((payload `(("file_name" . ,file-name) ("content" . ,content)))
         (callback (if callback
                       (claudia--claude-ai-json-callback callback)
@@ -375,15 +442,15 @@ When CALLBACK is nil, a simple message is displayed when the document is created
    (format "projects/%s/docs/%s" project doc)
    :type "DELETE"
    :expect-status "204"
-   :callback-success (unless silent
-                       '(lambda (_) (message "project doc deleted")))))
+   :callback-success (unless silent (lambda (_) (message "project doc deleted")))))
 
 ;; chats
 
 (defun claudia--claude-ai-request-post-chat (name &optional project model callback)
-  "Create new chat with NAME, optionally bound to PROJECT and MODEL, then call CALLBACK."
+  "Create chat with NAME, maybe bound to PROJECT and MODEL and call CALLBACK."
   (let ((payload `(("uuid" . ,(format "%s" (uuidgen-4)))
                    ("name" . ,name)
+                   ("model" . ,model)
                    ("include_conversation_preferences" . t)))
         (callback (or callback
                       (claudia--claude-ai-simple-json-callback "chat created" 'uuid))))
@@ -396,7 +463,7 @@ When CALLBACK is nil, a simple message is displayed when the document is created
      :callback-success callback)))
 
 (defun claudia--claude-ai-request-get-chats (callback)
-  "Get available chats from Claude.ai and call CALLBACK with json-encoded response."
+  "Get available chats from Claude.ai and call CALLBACK with json response."
   (let ((callback (claudia--claude-ai-json-callback callback)))
     (claudia--claude-ai-request
      "chat_conversations"
@@ -404,7 +471,7 @@ When CALLBACK is nil, a simple message is displayed when the document is created
      :callback-success callback)))
 
 (defun claudia--claude-ai-request-get-chat (id callback)
-  "Get chat with ID from Claude.ai and call CALLBACK with json-encoded response tree."
+  "Get chat with ID from Claude.ai and call CALLBACK with json response tree."
   (let ((callback (claudia--claude-ai-json-callback callback)))
     (claudia--claude-ai-request
      (format "chat_conversations/%s?tree=true&rendering_mode=messages" id)
@@ -417,7 +484,7 @@ When CALLBACK is nil, a simple message is displayed when the document is created
    (format "chat_conversations/%s" id)
    :type "DELETE"
    :expect-status "204"
-   :callback-success '(lambda (_) (message "chat deleted"))))
+   :callback-success (lambda (_) (message "chat deleted"))))
 
 ;; chat completion
 
@@ -507,9 +574,10 @@ See `imenu-create-index-function' and `imenu--index-alist' for details."
    #'claudia--refresh-chat-buffer-callback))
 
 (defun claudia--refresh-chat-buffer-callback (chats)
-  "Process CHATS message tree and render each message into the current chat buffer.
-Extracts sender, timestamp, and message content from each message, formats appropriately for
-display, and inserts into buffer using `claudia--chat-insert-entry'."
+  "Process CHATS message tree and render each message into current chat buffer.
+Extracts sender, timestamp, and message content from each message, formats
+appropriately for display, and inserts into buffer using
+`claudia--chat-insert-entry'."
   (claudia--chat-erase-buffer)
   (let ((messages (alist-get 'chat_messages chats)))
     (dolist (msg (append messages nil))
@@ -686,32 +754,6 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
 
 ;; basic functions to create/select projects, chats, docs etc.
 
-(defcustom claudia-default-project-name "created with claudia.el"
-  "If non-nil use this name for new projects."
-  :type 'string
-  :group 'claudia)
-
-(defcustom claudia-default-project-description "created with claudia.el"
-  "If non-nil use this name for new projects."
-  :type 'string
-  :group 'claudia)
-
-(defcustom claudia-default-project-prompt-template nil
-  "If non-nil use this prompt template for new projects."
-  :type 'string
-  :group 'claudia)
-
-(defcustom claudia-default-chat-name "[claudia.el]"
-  "If non-nil use this name for new chats."
-  :type 'string
-  :group 'claudia)
-
-(defvar claudia--current-project nil
-  "ID of current project on Claude.ai.")
-
-(defvar claudia--current-chat nil
-  "ID of current chat conversation on Claude.ai.")
-
 (defun claudia--assert-current-project-is-set ()
   "Assert `claudia-current-project' is set."
   (unless claudia--current-project
@@ -725,7 +767,7 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
 (defun claudia--assert-anthropic-api-key-is-set ()
   "Assert `claudia-anthropic-api-key' is set."
   (unless claudia-anthropic-api-key
-    (user-error "No API key set. Customize `claudia-anthropic-api-key'.")))
+    (user-error "No API key set. Customize `claudia-anthropic-api-key'")))
 
 (defun claudia--claude-ai-new-project (name &optional description template)
   "Create a new Claude.ai project with NAME, DESCRIPTION and TEMPLATE."
@@ -784,7 +826,7 @@ Prompts for a name or uses `claudia-default-chat-name' if it is non-nil."
   (interactive)
   (claudia--assert-current-project-is-set)
   (let ((name (or claudia-default-chat-name
-                  (prompt "Enter a name to create a new chat: ")))
+                  (read-string "Enter a name to create a new chat: ")))
         (prompt (read-string "prompt: ")))
     (claudia--claude-ai-new-chat name prompt)))
 
@@ -837,16 +879,16 @@ Prompts for a name or uses `claudia-default-chat-name' if it is non-nil."
   "Return a callback for completing-reading with PROMPT and CALLBACK.
 See `completing-read' for the meaning of the optional arguments NAME,
 PREDICATE and REQUIRE-MATCH."
-  #'(lambda (collection)
-      (let* ((map-id (lambda (x) (cons (alist-get 'uuid x) x)))
-             (completion-table (seq-map map-id collection))
-             (annotation-fun (lambda (s)
-                               (if-let ((val (assoc s minibuffer-completion-table))
-                                        (name (alist-get name (cdr val))))
-                                   (format " %s" name))))
-             (completion-extra-properties (list :annotation-function annotation-fun))
-             (selection (completing-read prompt completion-table predicate require-match)))
-        (apply callback (list selection)))))
+  (lambda (collection)
+    (let* ((map-id (lambda (x) (cons (alist-get 'uuid x) x)))
+           (completion-table (seq-map map-id collection))
+           (annotation-fun (lambda (s)
+                             (if-let ((val (assoc s minibuffer-completion-table))
+                                      (name (alist-get name (cdr val))))
+                                 (format " %s" name))))
+           (completion-extra-properties (list :annotation-function annotation-fun))
+           (selection (completing-read prompt completion-table predicate require-match)))
+      (apply callback (list selection)))))
 
 
 ;; chat completion, i.e prompting claude.ai
@@ -899,9 +941,9 @@ buffer."
   (claudia--chat-insert-entry "Claude" response time))
 
 (defun claudia--chat-insert-tool-use (tool-def args buffer &optional time)
-  "Insert new use of TOOL-DEF with ARGS in BUFFER into the *claudia-chat* buffer."
-  (let* ((tool-name (tool-name tool-def))
-         (response (format "[tool use: **%s** in buffer _%s_]" tool-name buffer)))
+  "Insert TOOL-DEF use with ARGS in BUFFER at TIME into the *claudia-chat* buffer."
+  (let* ((tool-name (claudia-tool-name tool-def))
+         (response (format "[tool use: **%s**%s in buffer _%s_]" tool-name args buffer)))
     (claudia--chat-insert-entry "Claude" response time)))
 
 (defcustom claudia-inhibit-prompt-to-kill-ring-in-chat t
@@ -957,26 +999,6 @@ old chat conversations are loaded the variable is not honered."
 
 ;; claudia-mode
 
-(defcustom claudia-max-recent-buffers nil
-  "Max number of recent buffers added to the project's knowledge."
-  :type 'string
-  :group 'claudia)
-
-(defcustom claudia-max-recent-buffers-content-length 100000
-  "Max number of recent buffers added to the project's knowledge."
-  :type 'integer
-  :group 'claudia)
-
-(defcustom claudia-ignore-buffers-regexps nil
-  "List of regexps for matching buffer names not added to the project's knowledge."
-  :type 'list
-  :group 'claudia)
-
-(defcustom claudia-ignore-buffers-major-mode-regexps nil
-  "List of regexps for matching buffer modes not added to the project's knowledge."
-  :type 'list
-  :group 'claudia)
-
 (defvar claudia--recent-buffers-alist nil
   "Alist of (buffer . metadata) recently added to the project's knowledge.")
 
@@ -985,13 +1007,6 @@ old chat conversations are loaded the variable is not honered."
   (concat "claudia-buffer:"
           (or (buffer-file-name buffer)
               (concat default-directory (buffer-name buffer)))))
-
-(defun claudia--add-doc-to-recent-buffers-callback (res)
-  "Callback for adding the project doc from RES to the recent buffers alist."
-  (when claudia-mode
-    (let ((data (claudia--docs-metadata res)))
-      (add-to-list 'claudia--recent-buffers-alist data t)
-      (claudia--maybe-cleanup-buffer-docs))))
 
 (defun claudia--window-change-hook (_)
   "Update the project knowlege base when the current window change."
@@ -1114,30 +1129,17 @@ effect if `claudia-mode' is active."
     (remove-hook 'after-save-hook #'claudia--after-save-hook)
     (setq claudia--recent-buffers-alist nil)))
 
+(defun claudia--add-doc-to-recent-buffers-callback (res)
+  "Callback for adding the project doc from RES to the recent buffers alist."
+  (when claudia-mode
+    (let ((data (claudia--docs-metadata res)))
+      (add-to-list 'claudia--recent-buffers-alist data t)
+      (claudia--maybe-cleanup-buffer-docs))))
+
 (provide 'claudia)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; anthropic.com api
-
-(defcustom claudia-anthropic-api-url "https://api.anthropic.com/v1"
-  "Base URL for Anthropi API."
-  :type 'string
-  :group 'claudia)
-
-(defcustom claudia-anthropic-api-key nil
-  "Anthropic API key as a string."
-  :type 'string
-  :group 'claudia)
-
-(defcustom claudia-anthropic-api-version "2023-06-01"
-  "Anthropic API version."
-  :type 'string
-  :group 'claudia)
-
-(defcustom claudia-anthropic-api-max-tokens 1024
-  "The maximum number of tokens to generate before stopping."
-  :type 'integer
-  :group 'claudia)
 
 (cl-defun claudia--anthropic-api-request
     (endpoint &key
@@ -1148,11 +1150,10 @@ effect if `claudia-mode' is active."
               (callback-success nil)
               (encoding 'ascii))
   "Make request to Anthropic API at ENDPOINT with optional request parameters.
-Send request of type TYPE (default \"POST\") to ENDPOINT expecting HTTP status
-EXPECT-STATUS (default \"200\"). The request body DATA if non-nil is encoded
-using ENCODING (default 'ascii) and sent with CONTENT-TYPE (default
-'application/json). On success, CALLBACK-SUCCESS is called with the response
-buffer if provided."
+Send request of type TYPE to ENDPOINT expecting HTTP status EXPECT-STATUS. The
+request body DATA if non-nil is encoded using ENCODING and sent with
+CONTENT-TYPE. On success, CALLBACK-SUCCESS is called with the response buffer if
+provided."
   (let* ((url (concat claudia-anthropic-api-url endpoint))
          (headers
           `(("content-type"      . ,(symbol-name content-type))
@@ -1177,17 +1178,17 @@ buffer if provided."
 
 ;; -- tool definition
 
-(cl-defstruct tool-param
+(cl-defstruct claudia-tool-param
   name
   type
   description)
 
-(cl-defstruct tool-input-schema
+(cl-defstruct claudia-tool-input-schema
   type
   properties
   required)
 
-(cl-defstruct tool
+(cl-defstruct claudia-tool
   name
   description
   function
@@ -1196,11 +1197,11 @@ buffer if provided."
 
 ;; -- tool application
 
-(cl-defstruct tool-arg
+(cl-defstruct claudia-tool-arg
   name
   value)
 
-(cl-defstruct tool-app
+(cl-defstruct claudia-tool-app
   name
   description
   args)
@@ -1208,42 +1209,43 @@ buffer if provided."
 (defun claudia--tool-to-alist (tool)
   "Converts TOOL to an alist for consumption by the anthropic API."
   `(("name" .
-     ,(tool-name tool))
+     ,(claudia-tool-name tool))
     ("description" .
-     ,(tool-description tool))
+     ,(claudia-tool-description tool))
     ("input_schema" .
      (("type" .
-       ,(tool-input-schema-type
-         (tool-input-schema tool)))
+       ,(claudia-tool-input-schema-type
+         (claudia-tool-input-schema tool)))
       ("properties" .
        ,(mapcar #'claudia--tool-param-to-alist
-                (tool-input-schema-properties
-                 (tool-input-schema tool))))
+                (claudia-tool-input-schema-properties
+                 (claudia-tool-input-schema tool))))
       ("required" .
-       ,(tool-input-schema-required
-         (tool-input-schema tool)))))))
+       ,(claudia-tool-input-schema-required
+         (claudia-tool-input-schema tool)))))))
 
 (defun claudia--tool-param-to-alist (param)
-  (if (tool-param-p param)
-      (let ((name (tool-param-name param))
-            (type (tool-param-type param))
-            (desc (tool-param-description param)))
+  "Convert PARAM to an alist."
+  (if (claudia-tool-param-p param)
+      (let ((name (claudia-tool-param-name param))
+            (type (claudia-tool-param-type param))
+            (desc (claudia-tool-param-description param)))
         `(,name . (("type" . ,type)
                    ("desc" . ,desc))))))
 ;; tool use
 
 (defcustom claudia-tools
-  `(,(make-tool
+  `(,(make-claudia-tool
       :name "get_buffer_content"
       :description "Returns the content of the current active buffer."
       :ask-before-use t
       :function (lambda () (buffer-string))
       :input-schema
-      (make-tool-input-schema
+      (make-claudia-tool-input-schema
        :type "object"
        :properties nil
        :required nil))
-    ,(make-tool
+    ,(make-claudia-tool
       :name "get_function_definition"
       :description "Returns definition of the given function symbol."
       :ask-before-use t
@@ -1252,30 +1254,30 @@ buffer if provided."
                     (when (fboundp sym)
                       (prin1-to-string (symbol-function sym)))))
       :input-schema
-      (make-tool-input-schema
+      (make-claudia-tool-input-schema
        :type "object"
        :properties
-       `(,(make-tool-param
+       `(,(make-claudia-tool-param
            :name "symbol"
            :type "string"
            :description "The function symbol (i.e name)"))
        :required '("symbol")))
-    ,(make-tool
+    ,(make-claudia-tool
       :name "emacs_message"
       :description "Send a message to the *Messages* buffer"
       :ask-before-use t
       :function (lambda (msg) (message "%s" msg))
       :input-schema
-      (make-tool-input-schema
+      (make-claudia-tool-input-schema
        :type "object"
        :properties
-       `(,(make-tool-param
+       `(,(make-claudia-tool-param
            :name "msg"
            :type "string"
            :description "The message to send"))
        :required '("msg"))))
   "List of tools to use."
-  :type 'list
+  :type '(list claudia-tool)
   :group 'claudia)
 
 ;; messages api
@@ -1290,7 +1292,7 @@ buffer if provided."
   (message "claudia: message history cleared"))
 
 (defun claudia--append-user-message (message)
-  "Append MESSAGE to `claudia--anthropic-current-chat-messages'"
+  "Append MESSAGE to `claudia--anthropic-current-chat-messages'."
   (setq claudia--anthropic-current-chat-messages
         (append
          claudia--anthropic-current-chat-messages
@@ -1300,8 +1302,9 @@ buffer if provided."
 (defun claudia--filter-empty-tool-use-inputs (content)
   "Filter away empty tool use inputs from CONTENT.
 AFAIK Anthropics messages API is designed so we should be able to echo back,
-assistant messages directly in the conversation. However tool uses from nullary tools
-seem to cause issues resulting in 'tool input must be a dictionary' errors."
+assistant messages directly in the conversation. However tool uses from nullary
+tools seem to cause issues resulting in `tool input must be a dictionary'
+errors."
   (let ((f (lambda (item)
              (if-let ((type (alist-get 'type item))
                       ((string= type "tool_use"))
@@ -1316,7 +1319,7 @@ seem to cause issues resulting in 'tool input must be a dictionary' errors."
     (vconcat (mapcar f content) nil)))
 
 (defun claudia--append-assistant-message (message)
-  "Append MESSAGE to `claudia--anthropic-current-chat-messages'"
+  "Append MESSAGE to `claudia--anthropic-current-chat-messages'."
   (let ((message (claudia--filter-empty-tool-use-inputs message)))
     (setq claudia--anthropic-current-chat-messages
           (append
@@ -1325,13 +1328,12 @@ seem to cause issues resulting in 'tool input must be a dictionary' errors."
               ("content" . ,message)))))))
 
 (defun claudia--anthropic-api-post-messages (callback &optional tools message)
-  "Call CALLBACK after completing current messages using TOOLS and optional last MESSAGE."
+  "Complete current messages with TOOLS and last MESSAGE, then call CALLBACK."
   (if message (claudia--append-user-message message))
   (let ((payload `(("model" . ,claudia-model)
                    ("max_tokens" . ,claudia-anthropic-api-max-tokens)
                    ("messages" . ,claudia--anthropic-current-chat-messages)
-                   ("tools" . ,(mapcar #'claudia--tool-to-alist tools))
-                   ))
+                   ("tools" . ,(mapcar #'claudia--tool-to-alist tools))))
         (callback (claudia--claude-ai-json-callback callback)))
     ;; (message "PAYLOAD: %s" payload)
     (claudia--anthropic-api-request
@@ -1341,7 +1343,7 @@ seem to cause issues resulting in 'tool input must be a dictionary' errors."
 
 (defun claudia--get-tool-def-from-name (name)
   "Lookup tool def for NAME in `claudia-tools'."
-  (cl-some (lambda (tool) (if (string= (tool-name tool) name) tool))
+  (cl-some (lambda (tool) (if (string= (claudia-tool-name tool) name) tool))
            claudia-tools))
 
 (defun claudia--tool-use-from-response (content)
@@ -1353,25 +1355,25 @@ seem to cause issues resulting in 'tool input must be a dictionary' errors."
 
 (defun claudia--execute-tool-prompt (tool-def)
   "Prompt for TOOL-DEF use with TOOL-ARGS."
-  (format "Execute tool %s?" (tool-name tool-def)))
+  (format "Execute tool %s?" (claudia-tool-name tool-def)))
 
 (defun claudia--maybe-ask-user-before-using-tool (tool-def)
-  "Ask the user if TOOL should be executed."
-  (if (tool-ask-before-use tool-def)
+  "Ask the user if TOOL-DEF should be executed."
+  (if (claudia-tool-ask-before-use tool-def)
       (y-or-n-p (claudia--execute-tool-prompt tool-def)))
   t)
 
 (defun claudia--execute-tool (tool-def tool-args buffer)
   "Execute TOOL-DEF with TOOL-ARGS inside BUFFER."
   ;; (message "CLAUDIA--EXECUTE-TOOL")
-  (let* ((fun (tool-function tool-def))
-         (schema (tool-input-schema tool-def))
-         (schema-props (tool-input-schema-properties schema))
+  (let* ((fun (claudia-tool-function tool-def))
+         (schema (claudia-tool-input-schema tool-def))
+         (schema-props (claudia-tool-input-schema-properties schema))
          (args nil))
     ;; build argument list by matching formal params with actual args
     (dolist (param (reverse schema-props))
-      (let* ((param-name (tool-param-name param))
-             (param-type (tool-param-type param))
+      (let* ((param-name (claudia-tool-param-name param))
+             ;;(param-type (claudia-tool-param-type param))
              (arg-val (cl-some (lambda (arg)
                                  (let ((arg-name (car arg))
                                        (arg-val  (cdr arg)))
@@ -1385,7 +1387,7 @@ seem to cause issues resulting in 'tool input must be a dictionary' errors."
       (apply fun args))))
 
 (defun claudia--convert-value-to-string (value)
-  "Convert VALUE received from Claude to a string"
+  "Convert VALUE received from Claude to a string."
   (cond
    ((stringp value) value)
    ((numberp value) (number-to-string value))
@@ -1400,7 +1402,7 @@ seem to cause issues resulting in 'tool input must be a dictionary' errors."
       ("content" . ,res))))
 
 (defun claudia--handle-tool-use (content buffer)
-  "Executes all tool uses from CONTENT in BUFFER and send their results back to anthropic."
+  "Executes all tool uses from CONTENT in BUFFER and send back results."
   (let* ((tool-uses (seq-map
                      #'claudia--tool-use-from-response
                      (seq-filter #'claudia--tool-use-from-response content)))
@@ -1436,8 +1438,8 @@ seem to cause issues resulting in 'tool input must be a dictionary' errors."
       (pcase stop-reason
         ("tool_use" (claudia--handle-tool-use content buffer))
         ("end_turn" nil)
-        ("max_tokens" (error "claudia: received stop reason: `max_tokens'"))
-        (_ (error "unknown stop reason: %s" stop-reason))))))
+        ("max_tokens" (error "Received stop reason: `max_tokens'"))
+        (_ (error "Unknown stop reason: %s" stop-reason))))))
 
 ;;;###autoload
 (defun claudia-prompt-with-tool-use ()
