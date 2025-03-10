@@ -192,14 +192,11 @@ My configuration looks something like this:
          ("C-x c d" . claudia-delete-project-knowledge))
   :custom
   ;; Claude.ai session key and organization
-  (claudia-session-key "your-session-key-here")
-  (claudia-organization-id "your-organization-id-here")
-
-  ;; The *claudia-chat* window is always visible on my second monitor
-  ;;
-  ;; Set this to 't (the default) if you the *claude-chat* buffer
-  ;; to automatically display when a new reply is received
-  (claudia-chat-display-buffer nil)
+  (claudia-session-key "sk-ant-sid01-....")
+  (claudia-organization-id "1038e09b-eb11-419f-bf66-6933d3c583e8")
+  
+  ;; Anthropic API session key
+  (claudia-anthropic-api-key "sk-ant-api03-...")
 
   ;; Ignore most buffers not containing code
   (claudia-ignore-buffers-regexps '("\\*.*\\*" "magit.*"))
@@ -219,17 +216,10 @@ My configuration looks something like this:
 
   :config
 
-  ;; My default project and chat - customize these values with your own
+  ;; My default project and chat - set these values to your own
   ;; default project and chat-ids after creating your first chat
   (setq claudia--current-project "7dfeb125-3269-431e-b0c4-d11d85936732")
   (setq claudia--current-chat "deed76c0-3d24-4055-ab0a-c639868c2afb")
-
-  ;; Center cursor at the top of the *claudia-chat* window
-  ;; Note: this requires that centered-cursor-mode is installed!
-  (add-hook 'claudia-chat-mode-hook
-          (lambda ()
-            (setq-local ccm-vpos-init 0)
-            (centered-cursor-mode)))
   (claudia-mode))
 ```
 
