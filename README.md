@@ -19,7 +19,9 @@ Claudia is an Emacs integration for the Claude AI assistant, providing an interf
 
 claudia has a rough tool-use implementation that can be used to provide elisp functions for claude to execute. Here's a quick demo:
 
-![](tool-use-demo.mp4)
+
+https://github.com/user-attachments/assets/97a06f8b-89d0-48c1-a0eb-ec9c3001221f
+
 
 Customize `claude-tools` with the tools of your choice and use `claudia-prompt-with-tool-use`. Here are the tools used for the demo from above:
 
