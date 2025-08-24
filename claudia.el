@@ -265,7 +265,6 @@ The template should contain four %s placeholders for:
 
 (defcustom claudia-model "claude-3-5-sonnet-20240620"
   "The model to use for new chats.  Possible values are:
-
 - claude-3-5-sonnet-20450620
 - claude-3-opus-20240229
 - claude-3-haiku-2024030"
@@ -468,11 +467,10 @@ created."
 
 ;; chats
 
-(defun claudia--claude-ai-request-post-chat (name &optional project model callback)
+(defun claudia--claude-ai-request-post-chat (name &optional project callback)
   "Create chat with NAME, maybe bound to PROJECT and MODEL and call CALLBACK."
   (let ((payload `(("uuid" . ,(format "%s" (uuidgen-4)))
                    ("name" . ,name)
-                   ("model" . ,model)
                    ("include_conversation_preferences" . t)))
         (callback (or callback
                       (claudia--claude-ai-simple-json-callback "chat created" 'uuid))))
@@ -817,7 +815,7 @@ Sorting modes are: Name, Project, Last Updated, and Messages."
                (claudia--chat-erase-buffer)
                (claudia--claude-ai-completion prompt))))))
     (claudia--claude-ai-request-post-chat
-     name claudia--current-project claudia-model callback)))
+     name claudia--current-project callback)))
 
 (defvar claudia--uuid-regex "[[:xdigit:]]\\{8\\}-\\([[:xdigit:]]\\{4\\}-\\)\\{3\\}[[:xdigit:]]\\{12\\}")
 
